@@ -1,0 +1,43 @@
+{
+  "name": "mmm-synphotoslideshow",
+  "version": "2.0.0",
+  "description": "Display fullscreen slideshows from Synology Photos on MagicMirror². Perfect for a dynamic photo frame!",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow"
+  },
+  "keywords": [
+    "magicmirror",
+    "slideshow",
+    "synology",
+    "photos",
+    "nas",
+    "photo-frame"
+  ],
+  "author": {
+    "name": "spydersoft-consulting",
+    "url": "https://github.com/spydersoft-consulting"
+  },
+  "main": "MMM-SynPhotoSlideshow.js",
+  "type": "commonjs",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "exif-js": "^2.3.0",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "@eslint/css": "^0.10.0",
+    "@eslint/js": "^9.31.0",
+    "@eslint/markdown": "^7.0.0",
+    "@stylistic/eslint-plugin": "^5.1.0",
+    "eslint": "^9.31.0",
+    "eslint-plugin-import-x": "^4.16.1",
+    "globals": "^16.3.0",
+    "prettier": "^3.6.2"
+  },
+  "scripts": {
+    "lint": "prettier --check . && eslint",
+    "lint:fix": "prettier --write . && eslint --fix"
+  }
+}
