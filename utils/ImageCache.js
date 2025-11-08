@@ -5,7 +5,7 @@
  */
 
 const NodeCache = require('node-cache');
-const fs = require('node:fs');
+const fsPromises = require('node:fs/promises');
 const path = require('node:path');
 const Log = require('../../../js/logger.js');
 const crypto = require('node:crypto');
@@ -18,6 +18,7 @@ class ImageCache {
     this.preloadQueue = [];
     this.isPreloading = false;
     this.currentCacheSize = 0;
+    this.preloadDelay = config.imageCachePreloadDelay || 500; // Configurable delay between preloads
   }
 
   /**
@@ -30,20 +31,27 @@ class ImageCache {
       this.maxCacheSize = maxSizeMB * 1024 * 1024; // Convert MB to bytes
 
       // Create cache directory if it doesn't exist
-      if (!fs.existsSync(this.cacheDir)) {
-        fs.mkdirSync(this.cacheDir, {recursive: true});
+      try {
+        await fsPromises.mkdir(this.cacheDir, {recursive: true});
+      } catch (error) {
+        // Directory might already exist
+        if (error.code !== 'EEXIST') {
+          throw error;
+        }
       }
 
-      // Initialize in-memory cache for quick lookups
+      // Initialize in-memory cache for quick lookups only
+      // Don't store full images in memory, just metadata
       // TTL of 7 days (in seconds)
       this.cache = new NodeCache({
         stdTTL: 60 * 60 * 24 * 7,
         checkperiod: 600,
-        useClones: false
+        useClones: false,
+        maxKeys: 1000 // Limit memory cache entries
       });
 
-      // Calculate current cache size
-      this.calculateCacheSize();
+      // Calculate current cache size asynchronously
+      await this.calculateCacheSize();
 
       Log.info(`[MMM-SynPhotoSlideshow] Image cache initialized at ${this.cacheDir} with max size ${maxSizeMB}MB`);
       return true;
@@ -54,24 +62,35 @@ class ImageCache {
   }
 
   /**
-   * Calculate current cache size
+   * Calculate current cache size (async to avoid blocking)
    */
-  calculateCacheSize () {
+  async calculateCacheSize () {
     try {
-      if (!fs.existsSync(this.cacheDir)) {
-        this.currentCacheSize = 0;
-        return;
-      }
-
       let totalSize = 0;
-      const files = fs.readdirSync(this.cacheDir);
 
-      for (const file of files) {
-        const filePath = path.join(this.cacheDir, file);
-        const stats = fs.statSync(filePath);
+      try {
+        const files = await fsPromises.readdir(this.cacheDir);
 
-        if (stats.isFile()) {
-          totalSize += stats.size;
+        // Process files in batches to avoid overwhelming system
+        const batchSize = 10;
+        for (let i = 0; i < files.length; i += batchSize) {
+          const batch = files.slice(i, i + batchSize);
+          const sizes = await Promise.all(batch.map(async (file) => {
+            try {
+              const filePath = path.join(this.cacheDir, file);
+              const stats = await fsPromises.stat(filePath);
+              return stats.isFile()
+                ? stats.size
+                : 0;
+            } catch {
+              return 0;
+            }
+          }));
+          totalSize += sizes.reduce((sum, size) => sum + size, 0);
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') {
+          throw error;
         }
       }
 
@@ -84,7 +103,7 @@ class ImageCache {
   }
 
   /**
-   * Evict old files if cache is too large
+   * Evict old files if cache is too large (async to avoid blocking)
    */
   async evictOldFiles () {
     if (this.currentCacheSize <= this.maxCacheSize) {
@@ -92,37 +111,51 @@ class ImageCache {
     }
 
     try {
-      const files = fs.readdirSync(this.cacheDir);
+      const files = await fsPromises.readdir(this.cacheDir);
       const fileStats = [];
 
-      // Get file stats with modification time
-      for (const file of files) {
-        const filePath = path.join(this.cacheDir, file);
-        const stats = fs.statSync(filePath);
+      // Get file stats with modification time (parallel for speed)
+      const statsPromises = files.map(async (file) => {
+        try {
+          const filePath = path.join(this.cacheDir, file);
+          const stats = await fsPromises.stat(filePath);
 
-        if (stats.isFile()) {
-          fileStats.push({
-            path: filePath,
-            name: file,
-            size: stats.size,
-            mtime: stats.mtime
-          });
+          if (stats.isFile()) {
+            return {
+              path: filePath,
+              name: file,
+              size: stats.size,
+              mtime: stats.mtime
+            };
+          }
+        } catch {
+          // File might have been deleted
         }
-      }
+        return null;
+      });
+
+      const allStats = await Promise.all(statsPromises);
+      fileStats.push(...allStats.filter((stat) => stat !== null));
 
       // Sort by modification time (oldest first)
       fileStats.sort((a, b) => a.mtime - b.mtime);
 
       // Remove oldest files until we're under the limit
+      const targetSize = this.maxCacheSize * 0.9; // Leave 10% headroom
       for (const file of fileStats) {
-        if (this.currentCacheSize <= this.maxCacheSize * 0.9) {
-          break; // Leave 10% headroom
+        if (this.currentCacheSize <= targetSize) {
+          break;
         }
 
-        fs.unlinkSync(file.path);
-        this.cache.del(file.name);
-        this.currentCacheSize -= file.size;
-        Log.debug(`[MMM-SynPhotoSlideshow] Evicted ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        try {
+          await fsPromises.unlink(file.path);
+          this.cache.del(file.name);
+          this.currentCacheSize -= file.size;
+          Log.debug(`[MMM-SynPhotoSlideshow] Evicted ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        } catch (error) {
+          // File might have been deleted already
+          Log.debug(`[MMM-SynPhotoSlideshow] Could not evict ${file.name}: ${error.message}`);
+        }
       }
     } catch (error) {
       Log.error(`[MMM-SynPhotoSlideshow] Error evicting files: ${error.message}`);
@@ -148,27 +181,38 @@ class ImageCache {
     try {
       const key = this.getCacheKey(imageIdentifier);
 
-      // Check memory cache first
-      const memCached = this.cache.get(key);
+      // Check if file exists in memory cache metadata
+      const cachedMeta = this.cache.get(key);
 
-      if (memCached) {
-        Log.debug(`[MMM-SynPhotoSlideshow] Memory cache hit for ${imageIdentifier}`);
-        return memCached;
+      if (cachedMeta) {
+        // Load from disk async (don't store full image in memory)
+        const filePath = path.join(this.cacheDir, key);
+        try {
+          const data = await fsPromises.readFile(filePath, 'utf8');
+          Log.debug(`[MMM-SynPhotoSlideshow] Cache hit for ${imageIdentifier}`);
+          return data;
+        } catch {
+          // File was deleted, remove from cache
+          this.cache.del(key);
+          Log.debug(`[MMM-SynPhotoSlideshow] Cache file missing for ${imageIdentifier}`);
+          return null;
+        }
       }
 
-      // Check disk cache
+      // Check disk cache directly
       const filePath = path.join(this.cacheDir, key);
 
-      if (fs.existsSync(filePath)) {
-        const data = fs.readFileSync(filePath, 'utf8');
-        // Store in memory cache for faster access next time
-        this.cache.set(key, data);
+      try {
+        await fsPromises.access(filePath);
+        const data = await fsPromises.readFile(filePath, 'utf8');
+        // Store metadata in memory (not the full image)
+        this.cache.set(key, true);
         Log.debug(`[MMM-SynPhotoSlideshow] Disk cache hit for ${imageIdentifier}`);
         return data;
+      } catch {
+        Log.debug(`[MMM-SynPhotoSlideshow] Cache miss for ${imageIdentifier}`);
+        return null;
       }
-
-      Log.debug(`[MMM-SynPhotoSlideshow] Cache miss for ${imageIdentifier}`);
-      return null;
     } catch (error) {
       Log.error(`[MMM-SynPhotoSlideshow] Error getting from cache: ${error.message}`);
       return null;
@@ -187,18 +231,21 @@ class ImageCache {
       const key = this.getCacheKey(imageIdentifier);
       const filePath = path.join(this.cacheDir, key);
 
-      // Store in memory cache
-      this.cache.set(key, imageData);
+      // Store metadata in memory (not the full image)
+      this.cache.set(key, true);
 
-      // Store on disk
+      // Store on disk async
       const dataSize = Buffer.byteLength(imageData, 'utf8');
-      fs.writeFileSync(filePath, imageData, 'utf8');
+      await fsPromises.writeFile(filePath, imageData, 'utf8');
 
       this.currentCacheSize += dataSize;
 
-      // Check if we need to evict old files
+      // Check if we need to evict old files (async, don't block)
       if (this.currentCacheSize > this.maxCacheSize) {
-        await this.evictOldFiles();
+        // Run eviction in background
+        this.evictOldFiles().catch(() => {
+          // Errors are already logged in evictOldFiles
+        });
       }
 
       Log.debug(`[MMM-SynPhotoSlideshow] Cached image ${imageIdentifier} (${(dataSize / 1024 / 1024).toFixed(2)}MB)`);
@@ -222,12 +269,14 @@ class ImageCache {
 
     Log.info(`[MMM-SynPhotoSlideshow] Starting background preload of ${this.preloadQueue.length} images`);
 
-    // Start preloading in background
-    this.processPreloadQueue(downloadCallback);
+    // Start preloading in background (non-blocking)
+    this.processPreloadQueue(downloadCallback).catch((error) => {
+      Log.error(`[MMM-SynPhotoSlideshow] Preload queue error: ${error.message}`);
+    });
   }
 
   /**
-   * Process preload queue in background
+   * Process preload queue in background (with rate limiting for low-power devices)
    */
   async processPreloadQueue (downloadCallback) {
     if (this.isPreloading || this.preloadQueue.length === 0) {
@@ -239,16 +288,22 @@ class ImageCache {
     while (this.preloadQueue.length > 0) {
       const image = this.preloadQueue.shift();
 
-      // Check if already cached
-      const cached = await this.get(image.url || image.path);
+      // Check if already cached (quick metadata check)
+      const key = this.getCacheKey(image.url || image.path);
+      const cachedMeta = this.cache.get(key);
 
-      if (!cached) {
+      if (!cachedMeta) {
         // Download and cache
         try {
-          await new Promise((resolve) => {
-            downloadCallback(image, (imageData) => {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Preload timeout'));
+            }, 30000);
+
+            downloadCallback(image, async (imageData) => {
+              clearTimeout(timeout);
               if (imageData) {
-                this.set(image.url || image.path, imageData);
+                await this.set(image.url || image.path, imageData);
                 Log.debug(`[MMM-SynPhotoSlideshow] Preloaded and cached: ${image.path}`);
               }
 
@@ -256,13 +311,16 @@ class ImageCache {
             });
           });
 
-          // Small delay between downloads to avoid overwhelming the system
+          // Configurable delay between downloads (default 500ms for low-power devices)
           await new Promise((resolve) => {
-            setTimeout(resolve, 100);
+            setTimeout(resolve, this.preloadDelay);
           });
         } catch (error) {
           Log.error(`[MMM-SynPhotoSlideshow] Error preloading image: ${error.message}`);
+          // Continue with next image
         }
+      } else {
+        Log.debug(`[MMM-SynPhotoSlideshow] Skipping preload, already cached: ${image.path}`);
       }
     }
 
@@ -282,13 +340,26 @@ class ImageCache {
       // Clear memory cache
       this.cache.flushAll();
 
-      // Clear disk cache
-      if (fs.existsSync(this.cacheDir)) {
-        const files = fs.readdirSync(this.cacheDir);
+      // Clear disk cache async
+      try {
+        const files = await fsPromises.readdir(this.cacheDir);
 
-        for (const file of files) {
-          const filePath = path.join(this.cacheDir, file);
-          fs.unlinkSync(filePath);
+        // Delete files in batches to avoid overwhelming system
+        const batchSize = 10;
+        for (let i = 0; i < files.length; i += batchSize) {
+          const batch = files.slice(i, i + batchSize);
+          await Promise.all(batch.map(async (file) => {
+            try {
+              const filePath = path.join(this.cacheDir, file);
+              await fsPromises.unlink(filePath);
+            } catch {
+              // File might already be deleted
+            }
+          }));
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') {
+          throw error;
         }
       }
 

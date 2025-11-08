@@ -33,6 +33,11 @@ Module.register('MMM-SynPhotoSlideshow', {
     enableImageCache: true, // Enable local caching of downloaded images
     imageCacheMaxSize: 500, // Maximum cache size in MB (default: 500MB)
     imageCachePreloadCount: 10, // Number of images to preload in background (default: 10)
+    imageCachePreloadDelay: 500, // Delay between preloads in ms (default: 500ms for low-power devices)
+    // Memory monitoring configuration
+    enableMemoryMonitor: true, // Enable memory usage monitoring
+    memoryMonitorInterval: 60000, // How often to check memory in ms (default: 1 minute)
+    memoryThreshold: 0.85, // Trigger cleanup at this memory usage % (default: 85%)
     // the speed at which to switch between images, in milliseconds
     slideshowSpeed: 10 * 1000,
     // if true randomize image order, otherwise use sortImagesBy and sortImagesDescending
@@ -401,26 +406,29 @@ Module.register('MMM-SynPhotoSlideshow', {
         this.imageHandler.applyAnimation(imageDiv, image);
       }
 
-      // Handle EXIF data
-      EXIF.getData(image, () => {
-        // Update image info if enabled
-        if (this.config.showImageInfo) {
-          let dateTime = EXIF.getTag(image, 'DateTimeOriginal');
-          if (dateTime !== null) {
-            try {
-              dateTime = moment(dateTime, 'YYYY:MM:DD HH:mm:ss');
-              dateTime = dateTime.format('dddd MMMM D, YYYY HH:mm');
-            } catch {
-              Log.log(`[MMM-SynPhotoSlideshow] Failed to parse dateTime: ${dateTime} to format YYYY:MM:DD HH:mm:ss`);
-              dateTime = '';
+      // Handle EXIF data asynchronously to avoid blocking UI
+      // Defer to next tick to allow image to render first
+      setTimeout(() => {
+        EXIF.getData(image, () => {
+          // Update image info if enabled
+          if (this.config.showImageInfo) {
+            let dateTime = EXIF.getTag(image, 'DateTimeOriginal');
+            if (dateTime !== null) {
+              try {
+                dateTime = moment(dateTime, 'YYYY:MM:DD HH:mm:ss');
+                dateTime = dateTime.format('dddd MMMM D, YYYY HH:mm');
+              } catch {
+                Log.log(`[MMM-SynPhotoSlideshow] Failed to parse dateTime: ${dateTime} to format YYYY:MM:DD HH:mm:ss`);
+                dateTime = '';
+              }
             }
+            this.updateImageInfo(imageinfo, dateTime);
           }
-          this.updateImageInfo(imageinfo, dateTime);
-        }
 
-        // Apply EXIF orientation if needed
-        this.imageHandler.applyExifOrientation(imageDiv, image);
-      });
+          // Apply EXIF orientation if needed
+          this.imageHandler.applyExifOrientation(imageDiv, image);
+        });
+      }, 0);
 
       transitionDiv.appendChild(imageDiv);
       this.imagesDiv.appendChild(transitionDiv);

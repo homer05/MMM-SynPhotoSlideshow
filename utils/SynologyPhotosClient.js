@@ -223,22 +223,29 @@ class SynologyPhotosClient {
   }
 
   /**
-   * Fetch photos from Synology Photos
+   * Fetch photos from Synology Photos (optimized with parallel requests)
    */
   async fetchPhotos () {
     try {
       let photos = [];
 
       if (this.tagIds && Object.keys(this.tagIds).length > 0) {
+        // Fetch all tag photos in parallel for better performance
+        const fetchPromises = [];
+
         for (const [spaceKey, tagIdArray] of Object.entries(this.tagIds)) {
           const spaceId = spaceKey === 'shared'
             ? null
             : parseInt(spaceKey, 10);
+
           for (const tagId of tagIdArray) {
-            const tagPhotos = await this.fetchPhotosByTagInSpace(tagId, spaceId);
-            photos = photos.concat(tagPhotos);
+            fetchPromises.push(this.fetchPhotosByTagInSpace(tagId, spaceId));
           }
         }
+
+        // Wait for all requests to complete
+        const photoArrays = await Promise.all(fetchPromises);
+        photos = photoArrays.flat();
         photos = this.removeDuplicatePhotos(photos);
       } else if (this.useSharedAlbum) {
         // Get all photos from shared album (no tag filtering)
@@ -248,11 +255,10 @@ class SynologyPhotosClient {
           // Get all photos if no specific album
           photos = await this.fetchAllPhotos();
         } else {
-          // Get photos from specific album(s)
-          for (const folderId of this.folderIds) {
-            const albumPhotos = await this.fetchAlbumPhotos(folderId);
-            photos = photos.concat(albumPhotos);
-          }
+          // Get photos from all albums in parallel
+          const albumPromises = this.folderIds.map((folderId) => this.fetchAlbumPhotos(folderId));
+          const photoArrays = await Promise.all(albumPromises);
+          photos = photoArrays.flat();
         }
       }
 

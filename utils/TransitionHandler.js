@@ -28,17 +28,37 @@ class TransitionHandler {
   }
 
   /**
-   * Clean up old images from DOM
+   * Clean up old images from DOM (optimized to prevent memory leaks)
    */
   cleanupOldImages (imagesDiv) {
-    // Remove first child if there are more than 2 elements
-    if (imagesDiv.childNodes.length > 1) {
-      imagesDiv.removeChild(imagesDiv.childNodes[0]);
+    // Keep maximum 2 transition divs to prevent memory leaks
+    while (imagesDiv.childNodes.length > 2) {
+      const [oldNode] = imagesDiv.childNodes;
+
+      // Clear background image to release memory
+      if (oldNode.firstChild && oldNode.firstChild.style) {
+        oldNode.firstChild.style.backgroundImage = '';
+      }
+
+      // Remove the node
+      imagesDiv.removeChild(oldNode);
     }
 
     // Fade out current image if present
     if (imagesDiv.childNodes.length > 0) {
-      imagesDiv.childNodes[0].style.opacity = '0';
+      const [currentNode] = imagesDiv.childNodes;
+      currentNode.style.opacity = '0';
+
+      // Schedule cleanup of the faded-out image
+      setTimeout(() => {
+        if (currentNode.parentNode === imagesDiv && imagesDiv.childNodes.length > 1) {
+          // Clear background image before removal
+          if (currentNode.firstChild && currentNode.firstChild.style) {
+            currentNode.firstChild.style.backgroundImage = '';
+          }
+          imagesDiv.removeChild(currentNode);
+        }
+      }, parseFloat(this.config.transitionSpeed) * 1000);
     }
   }
 }

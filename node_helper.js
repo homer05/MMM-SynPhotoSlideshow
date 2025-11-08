@@ -21,6 +21,7 @@ const TimerManager = require('./utils/TimerManager.js');
 const ImageProcessor = require('./utils/ImageProcessor.js');
 const SynologyManager = require('./utils/SynologyManager.js');
 const ImageCache = require('./utils/ImageCache.js');
+const MemoryMonitor = require('./utils/MemoryMonitor.js');
 
 // the main module helper create
 module.exports = NodeHelper.create({
@@ -32,6 +33,7 @@ module.exports = NodeHelper.create({
     this.synologyManager = new SynologyManager();
     this.imageCache = null; // Initialized when config is received
     this.imageProcessor = null; // Initialized when config is received
+    this.memoryMonitor = null; // Initialized when config is received
     this.config = null;
     /* eslint-disable-next-line no-global-assign, no-implicit-globals */
     self = this;
@@ -188,6 +190,26 @@ module.exports = NodeHelper.create({
     if (notification === 'BACKGROUNDSLIDESHOW_REGISTER_CONFIG') {
       const config = payload;
       this.config = config;
+
+      // Initialize memory monitor if enabled
+      if (config.enableMemoryMonitor !== false) {
+        this.memoryMonitor = new MemoryMonitor(config);
+
+        // Register cleanup callback
+        this.memoryMonitor.onCleanupNeeded(() => {
+          Log.info('[MMM-SynPhotoSlideshow] Running memory cleanup');
+
+          // Clear image cache if it exists
+          if (this.imageCache) {
+            // Don't fully clear, just trigger eviction
+            this.imageCache.evictOldFiles().catch((error) => {
+              Log.error(`[MMM-SynPhotoSlideshow] Cache cleanup error: ${error.message}`);
+            });
+          }
+        });
+
+        this.memoryMonitor.start();
+      }
 
       // Initialize image cache if enabled
       if (config.enableImageCache) {

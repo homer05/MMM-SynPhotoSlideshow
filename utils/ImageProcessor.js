@@ -4,7 +4,6 @@
  * Handles image reading, resizing, and processing
  */
 
-const FileSystem = require('node:fs');
 const sharp = require('sharp');
 const Log = require('../../../js/logger.js');
 
@@ -15,61 +14,52 @@ class ImageProcessor {
   }
 
   /**
-   * Resize image using sharp
+   * Resize image using sharp (optimized for low memory)
    */
-  resizeImage (inputPath, callback) {
+  async resizeImage (inputPath, callback) {
     Log.log(`[MMM-SynPhotoSlideshow] Resizing image to max: ${this.config.maxWidth}x${this.config.maxHeight}`);
 
-    const transformer = sharp()
-      .rotate()
-      .resize({
-        width: parseInt(this.config.maxWidth, 10),
-        height: parseInt(this.config.maxHeight, 10),
-        fit: 'inside',
-      })
-      .keepMetadata()
-      .jpeg({quality: 80});
+    try {
+      // Use sharp's buffer mode which is more memory efficient
+      const buffer = await sharp(inputPath)
+        .rotate()
+        .resize({
+          width: parseInt(this.config.maxWidth, 10),
+          height: parseInt(this.config.maxHeight, 10),
+          fit: 'inside',
+        })
+        .jpeg({
+          quality: 80,
+          progressive: true, // Better for low-power devices
+          mozjpeg: true // Use mozjpeg for better compression
+        })
+        .toBuffer();
 
-    const outputStream = [];
-
-    FileSystem.createReadStream(inputPath)
-      .pipe(transformer)
-      .on('data', (chunk) => {
-        outputStream.push(chunk);
-      })
-      .on('end', () => {
-        const buffer = Buffer.concat(outputStream);
-        callback(`data:image/jpg;base64,${buffer.toString('base64')}`);
-        Log.log('[MMM-SynPhotoSlideshow] Resizing complete');
-      })
-      .on('error', (err) => {
-        Log.error('[MMM-SynPhotoSlideshow] Error resizing image:', err);
-        callback(null);
-      });
+      callback(`data:image/jpg;base64,${buffer.toString('base64')}`);
+      Log.log('[MMM-SynPhotoSlideshow] Resizing complete');
+    } catch (err) {
+      Log.error('[MMM-SynPhotoSlideshow] Error resizing image:', err);
+      callback(null);
+    }
   }
 
   /**
-   * Read file without resizing
+   * Read file without resizing (optimized for low memory)
    */
-  readFileRaw (filepath, callback) {
+  async readFileRaw (filepath, callback) {
     const ext = filepath.split('.').pop();
-    const chunks = [];
 
-    FileSystem.createReadStream(filepath)
-      .on('data', (chunk) => {
-        chunks.push(chunk);
-      })
-      .on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        callback(`data:image/${ext};base64,${buffer.toString('base64')}`);
-      })
-      .on('error', (err) => {
-        Log.error('[MMM-SynPhotoSlideshow] Error reading file:', err);
-        callback(null);
-      })
-      .on('close', () => {
-        Log.log('[MMM-SynPhotoSlideshow] Stream closed');
-      });
+    try {
+      // Use fs.promises for better memory management
+      const fsPromises = require('node:fs/promises');
+      const buffer = await fsPromises.readFile(filepath);
+
+      callback(`data:image/${ext};base64,${buffer.toString('base64')}`);
+      Log.log('[MMM-SynPhotoSlideshow] File read complete');
+    } catch (err) {
+      Log.error('[MMM-SynPhotoSlideshow] Error reading file:', err);
+      callback(null);
+    }
   }
 
   /**
@@ -122,12 +112,12 @@ class ImageProcessor {
       return;
     }
 
-    // Handle local files
+    // Handle local files (now async)
     if (this.config.resizeImages) {
-      this.resizeImage(filepath, callback);
+      await this.resizeImage(filepath, callback);
     } else {
       Log.log('[MMM-SynPhotoSlideshow] Reading image without resizing');
-      this.readFileRaw(filepath, callback);
+      await this.readFileRaw(filepath, callback);
     }
   }
 }
