@@ -12,6 +12,11 @@
  */
 
 Module.register('MMM-SynPhotoSlideshow', {
+  // Module dependencies
+  imageHandler: null,
+  uiBuilder: null,
+  transitionHandler: null,
+
   // Default module config.
   defaults: {
     // Synology Photos configuration (REQUIRED)
@@ -22,10 +27,14 @@ Module.register('MMM-SynPhotoSlideshow', {
     synologyTagNames: [], // Array of tag names to filter photos by (e.g., ['Vacation', 'Family'])
     synologyShareToken: '', // If using a shared album link, extract the passphrase/token
     synologyMaxPhotos: 1000, // Maximum number of photos to fetch from Synology
+    // how often to refresh the image list from Synology, in milliseconds (default: 1 hour)
+    refreshImageListInterval: 60 * 60 * 1000, // 1 hour
     // the speed at which to switch between images, in milliseconds
     slideshowSpeed: 10 * 1000,
     // if true randomize image order, otherwise use sortImagesBy and sortImagesDescending
     randomizeImageOrder: false,
+    // automatically adjust portrait images to fit landscape screens without distortion
+    fitPortraitImages: true,
     // keeps track of shown images to make sure you have seen them all before an image is shown twice.
     showAllImagesBeforeRestart: false,
     // how to sort images: name, random, created, modified
@@ -106,46 +115,16 @@ Module.register('MMM-SynPhotoSlideshow', {
 
   // load function
   start () {
-    // add identifier to the config
+    // Add identifier to the config
     this.config.identifier = this.identifier;
-    // ensure image order is in lower case
-    this.config.sortImagesBy = this.config.sortImagesBy.toLowerCase();
-    // commented out since this was not doing anything
-    // set no error
-    // this.errorMessage = null;
+    
+    // Validate and normalize configuration
+    this.config = ConfigValidator.validateConfig(this.config);
 
-    // validate imageinfo property.  This will make sure we have at least 1 valid value
-    const imageInfoRegex = /\bname\b|\bdate\b/giu;
-    if (
-      this.config.showImageInfo && !imageInfoRegex.test(this.config.imageInfo)
-    ) {
-      Log.warn('[MMM-SynPhotoSlideshow] showImageInfo is set, but imageInfo does not have a valid value.');
-      // Use name as the default
-      this.config.imageInfo = ['name'];
-    } else {
-      // convert to lower case and replace any spaces with , to make sure we get an array back
-      // even if the user provided space separated values
-      this.config.imageInfo = this.config.imageInfo
-        .toLowerCase()
-        .replace(/\s/gu, ',')
-        .split(',');
-      // now filter the array to only those that have values
-      this.config.imageInfo = this.config.imageInfo.filter((n) => n);
-    }
-
-    if (!this.config.transitionImages) {
-      this.config.transitionSpeed = '0';
-    }
-
-    // Lets make sure the backgroundAnimation duration matches the slideShowSpeed unless it has been
-    // overriden
-    if (this.config.backgroundAnimationDuration === '1s') {
-      this.config.backgroundAnimationDuration = `${this.config.slideshowSpeed / 1000}s`;
-    }
-
-    // Chrome versions < 81 do not support EXIF orientation natively. A CSS transformation
-    // needs to be applied for the image to display correctly - see http://crbug.com/158753 .
-    this.browserSupportsExifOrientationNatively = CSS.supports('image-orientation: from-image');
+    // Initialize helper modules
+    this.imageHandler = new ImageHandler(this.config);
+    this.uiBuilder = new UIBuilder(this.config);
+    this.transitionHandler = new TransitionHandler(this.config);
 
     this.playingVideo = false;
   },
@@ -153,7 +132,11 @@ Module.register('MMM-SynPhotoSlideshow', {
   getScripts () {
     return [
       `modules/${this.name}/node_modules/exif-js/exif.js`,
-      'moment.js'
+      'moment.js',
+      this.file('utils/ConfigValidator.js'),
+      this.file('utils/ImageHandler.js'),
+      this.file('utils/UIBuilder.js'),
+      this.file('utils/TransitionHandler.js')
     ];
   },
 
@@ -351,9 +334,7 @@ Module.register('MMM-SynPhotoSlideshow', {
       this.createProgressbarDiv(wrapper, this.config.slideshowSpeed);
     }
 
-    if (!this.config.synologyUrl) {
-      Log.error('[MMM-SynPhotoSlideshow] Missing required parameter synologyUrl.');
-    } else {
+    if (ConfigValidator.checkRequiredConfig(this.config)) {
       // create an empty image list
       this.imageList = [];
       // set beginning image index to 0, as it will auto increment on start
@@ -365,45 +346,19 @@ Module.register('MMM-SynPhotoSlideshow', {
   },
 
   createGradientDiv (direction, gradient, wrapper) {
-    const div = document.createElement('div');
-    div.style.backgroundImage =
-      `linear-gradient( to ${direction}, ${gradient.join()})`;
-    div.className = 'gradient';
-    wrapper.appendChild(div);
+    this.uiBuilder.createGradientDiv(direction, gradient, wrapper);
   },
 
   createRadialGradientDiv (type, gradient, wrapper) {
-    const div = document.createElement('div');
-    div.style.backgroundImage =
-      `radial-gradient( ${type}, ${gradient.join()})`;
-    div.className = 'gradient';
-    wrapper.appendChild(div);
-  },
-
-  createDiv () {
-    const div = document.createElement('div');
-    div.style.backgroundSize = this.config.backgroundSize;
-    div.style.backgroundPosition = this.config.backgroundPosition;
-    div.className = 'image';
-    return div;
+    this.uiBuilder.createRadialGradientDiv(type, gradient, wrapper);
   },
 
   createImageInfoDiv (wrapper) {
-    const div = document.createElement('div');
-    div.className = `info ${this.config.imageInfoLocation}`;
-    wrapper.appendChild(div);
-    return div;
+    return this.uiBuilder.createImageInfoDiv(wrapper);
   },
 
   createProgressbarDiv (wrapper, slideshowSpeed) {
-    const div = document.createElement('div');
-    div.className = 'progress';
-    const inner = document.createElement('div');
-    inner.className = 'progress-inner';
-    inner.style.display = 'none';
-    inner.style.animation = `move ${slideshowSpeed}ms linear`;
-    div.appendChild(inner);
-    wrapper.appendChild(div);
+    this.uiBuilder.createProgressbarDiv(wrapper, slideshowSpeed);
   },
   displayImage (imageinfo) {
     const mwLc = imageinfo.path.toLowerCase();
@@ -419,115 +374,50 @@ Module.register('MMM-SynPhotoSlideshow', {
 
     const image = new Image();
     image.onload = () => {
-      // check if there are more than 2 elements and remove the first one
-      if (this.imagesDiv.childNodes.length > 1) {
-        this.imagesDiv.removeChild(this.imagesDiv.childNodes[0]);
-      }
-      if (this.imagesDiv.childNodes.length > 0) {
-        this.imagesDiv.childNodes[0].style.opacity = '0';
-      }
+      // Clean up old images
+      this.transitionHandler.cleanupOldImages(this.imagesDiv);
 
-      const transitionDiv = document.createElement('div');
-      transitionDiv.className = 'transition';
-      if (this.config.transitionImages && this.config.transitions.length > 0) {
-        const randomNumber = Math.floor(Math.random() * this.config.transitions.length);
-        transitionDiv.style.animationDuration = this.config.transitionSpeed;
-        transitionDiv.style.transition = `opacity ${this.config.transitionSpeed} ease-in-out`;
-        transitionDiv.style.animationName = this.config.transitions[
-          randomNumber
-        ];
-        transitionDiv.style.animationTimingFunction = this.config.transitionTimingFunction;
-      }
+      // Create transition div
+      const transitionDiv = this.transitionHandler.createTransitionDiv();
 
-      const imageDiv = this.createDiv();
+      // Create and configure image div
+      const imageDiv = this.imageHandler.createImageDiv();
       imageDiv.style.backgroundImage = `url("${image.src}")`;
-      // imageDiv.style.transform = 'rotate(0deg)';
+      
+      // Apply fit mode (portrait/landscape)
+      const useFitMode = this.imageHandler.applyFitMode(imageDiv, image);
 
-      // this.div1.style.backgroundImage = `url("${image.src}")`;
-      // this.div1.style.opacity = '1';
-
+      // Restart progress bar if enabled
       if (this.config.showProgressBar) {
-        // Restart css animation
-        const oldDiv = document.querySelector('.progress-inner');
-        const newDiv = oldDiv.cloneNode(true);
-        oldDiv.parentNode.replaceChild(newDiv, oldDiv);
-        newDiv.style.display = '';
+        this.uiBuilder.restartProgressBar();
       }
 
-      // Check to see if we need to animate the background
-      if (
-        this.config.backgroundAnimationEnabled &&
-        this.config.animations.length
-      ) {
-        const randomNumber = Math.floor(Math.random() * this.config.animations.length);
-        const animation = this.config.animations[randomNumber];
-        imageDiv.style.animationDuration = this.config.backgroundAnimationDuration;
-        imageDiv.style.animationDelay = this.config.transitionSpeed;
-
-        if (animation === 'slide') {
-          // check to see if the width of the picture is larger or the height
-          const {width} = image;
-          const {height} = image;
-          const adjustedWidth = width * window.innerHeight / height;
-          const adjustedHeight = height * window.innerWidth / width;
-
-          imageDiv.style.backgroundPosition = '';
-          imageDiv.style.animationIterationCount = this.config.backgroundAnimationLoopCount;
-          imageDiv.style.backgroundSize = 'cover';
-
-          if (
-            adjustedWidth / window.innerWidth >
-            adjustedHeight / window.innerHeight
-          ) {
-            // Scrolling horizontally...
-            if (Math.floor(Math.random() * 2)) {
-              imageDiv.className += ' slideH';
-            } else {
-              imageDiv.className += ' slideHInv';
-            }
-          } else {
-            // Scrolling vertically...
-            if (Math.floor(Math.random() * 2)) {
-              imageDiv.className += ' slideV';
-            } else {
-              imageDiv.className += ' slideVInv';
-            }
-          }
-        } else {
-          imageDiv.className += ` ${animation}`;
-        }
+      // Apply animations if not in fit mode
+      if (!useFitMode) {
+        this.imageHandler.applyAnimation(imageDiv, image);
       }
 
+      // Handle EXIF data
       EXIF.getData(image, () => {
+        // Update image info if enabled
         if (this.config.showImageInfo) {
           let dateTime = EXIF.getTag(image, 'DateTimeOriginal');
-          // attempt to parse the date if possible
           if (dateTime !== null) {
             try {
               dateTime = moment(dateTime, 'YYYY:MM:DD HH:mm:ss');
               dateTime = dateTime.format('dddd MMMM D, YYYY HH:mm');
             } catch {
-              Log.log(`[MMM-SynPhotoSlideshow] Failed to parse dateTime: ${
-                dateTime
-              } to format YYYY:MM:DD HH:mm:ss`);
+              Log.log(`[MMM-SynPhotoSlideshow] Failed to parse dateTime: ${dateTime} to format YYYY:MM:DD HH:mm:ss`);
               dateTime = '';
             }
           }
-          // TODO: allow for location lookup via openMaps
-          // let lat = EXIF.getTag(this, "GPSLatitude");
-          // let lon = EXIF.getTag(this, "GPSLongitude");
-          // // Only display the location if we have both longitute and lattitude
-          // if (lat && lon) {
-          //   // Get small map of location
-          // }
           this.updateImageInfo(imageinfo, dateTime);
         }
 
-        if (!this.browserSupportsExifOrientationNatively) {
-          const exifOrientation = EXIF.getTag(image, 'Orientation');
-          imageDiv.style.transform = this.getImageTransformCss(exifOrientation);
-        }
+        // Apply EXIF orientation if needed
+        this.imageHandler.applyExifOrientation(imageDiv, image);
       });
+
       transitionDiv.appendChild(imageDiv);
       this.imagesDiv.appendChild(transitionDiv);
     };
@@ -573,63 +463,8 @@ Module.register('MMM-SynPhotoSlideshow', {
     }
   },
 
-  getImageTransformCss (exifOrientation) {
-    switch (exifOrientation) {
-      case 2:
-        return 'scaleX(-1)';
-      case 3:
-        return 'scaleX(-1) scaleY(-1)';
-      case 4:
-        return 'scaleY(-1)';
-      case 5:
-        return 'scaleX(-1) rotate(90deg)';
-      case 6:
-        return 'rotate(90deg)';
-      case 7:
-        return 'scaleX(-1) rotate(-90deg)';
-      case 8:
-        return 'rotate(-90deg)';
-      case 1: // Falls through.
-      default:
-        return 'rotate(0deg)';
-    }
-  },
-
   updateImageInfo (imageinfo, imageDate) {
-    const imageProps = [];
-    this.config.imageInfo.forEach((prop) => {
-      switch (prop) {
-        case 'date':
-          if (imageDate && imageDate !== 'Invalid date') {
-            imageProps.push(imageDate);
-          }
-          break;
-
-        case 'name': // default is name
-          // Only display last path component as image name if recurseSubDirectories is not set.
-          let imageName = imageinfo.path.split('/').pop();
-
-          // Remove file extension from image name.
-          if (this.config.imageInfoNoFileExt) {
-            imageName = imageName.substring(0, imageName.lastIndexOf('.'));
-          }
-          imageProps.push(imageName);
-          break;
-        case 'imagecount':
-          imageProps.push(`${imageinfo.index} of ${imageinfo.total}`);
-          break;
-        default:
-          Log.warn(`[MMM-SynPhotoSlideshow] ${prop
-          } is not a valid value for imageInfo.  Please check your configuration`);
-      }
-    });
-
-    let innerHTML = `<header class="infoDivHeader">${this.translate('PICTURE_INFO')}</header>`;
-    imageProps.forEach((val) => {
-      innerHTML += `${val}<br/>`;
-    });
-
-    this.imageInfoDiv.innerHTML = innerHTML;
+    this.uiBuilder.updateImageInfo(this.imageInfoDiv, imageinfo, imageDate, this.translate.bind(this));
   },
 
   resume () {

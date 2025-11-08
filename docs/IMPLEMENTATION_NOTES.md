@@ -5,7 +5,7 @@ This implementation adds support for fetching images from Synology Photos (hoste
 
 ## Files Added
 
-### 1. synology-photos-client.js
+### 1. utils/SynologyPhotosClient.js
 Main API client for Synology Photos integration:
 - Handles authentication with Synology DSM
 - Supports both credential-based and shared album token authentication
@@ -20,15 +20,9 @@ Comprehensive setup guide including:
 - Step-by-step configuration instructions
 - Troubleshooting section
 - Security best practices
-- Example configurations for various use cases
+- Example configurations for various use cases (now in README.md and SYNOLOGY_SETUP.md)
 
-### 3. synology-config-example.js
-Quick reference configuration examples:
-- Credential-based authentication
-- Shared album authentication
-- Combined local + Synology setup
-
-### 4. .env.example
+### 3. .env.example
 Template for storing sensitive configuration separately
 
 ## Files Modified

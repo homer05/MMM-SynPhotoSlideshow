@@ -120,7 +120,10 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 ```
 
 **Notes:**
-- Tag filtering requires account credentials (not available with shared album tokens)
+- Tag filtering works with both personal accounts (credentials) and shared albums (share tokens)
+- When using personal account credentials, photos are retrieved from both:
+  - Your personal space (photos you own)
+  - Shared spaces (albums shared with you by others)
 - Tag names are case-insensitive
 - Photos with any of the specified tags will be included
 - If a photo has multiple matching tags, it will only appear once
@@ -196,7 +199,10 @@ This module uses the Synology Photos API:
 - **Large Albums**: Set `synologyMaxPhotos` appropriately for your album size
 - **Network Speed**: Photos are downloaded on-demand, ensure good network speed
 - **Caching**: Consider enabling `resizeImages` to reduce bandwidth usage
-- **Update Frequency**: The module fetches the photo list once on startup
+- **Update Frequency**: By default, the module refreshes the photo list every hour. Adjust `refreshImageListInterval` to control how often new photos are fetched from Synology:
+  - Set to `3600000` (1 hour) - default
+  - Set to `1800000` (30 minutes) for more frequent updates
+  - Set to `0` to disable automatic refreshing (photos only loaded at startup)
 
 ## Example Configurations
 
@@ -211,9 +217,11 @@ This module uses the Synology Photos API:
     synologyAccount: 'photoframe',
     synologyPassword: 'secure-password',
     synologyAlbumName: 'Family Favorites',
+    refreshImageListInterval: 3600000, // Refresh every hour
     slideshowSpeed: 30000,
     transitionImages: true,
     randomizeImageOrder: true,
+    fitPortraitImages: true, // Automatically fit portrait photos without distortion
     showImageInfo: true,
     imageInfo: 'date',
     backgroundSize: 'contain'
@@ -235,6 +243,24 @@ This module uses the Synology Photos API:
     transitions: ['opacity', 'slideFromRight', 'slideFromLeft'],
     randomizeImageOrder: true,
     backgroundAnimationEnabled: true
+  }
+}
+```
+
+### Shared Album with Tag Filtering
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {
+    useSynologyPhotos: true,
+    synologyUrl: 'https://your-nas.synology.me:5001',
+    synologyShareToken: 'your-share-token',
+    synologyTagNames: ['Favorites', 'Best Shots'], // Filter by tags within shared album
+    slideshowSpeed: 60000,
+    transitionImages: true,
+    randomizeImageOrder: true,
+    fitPortraitImages: true
   }
 }
 ```

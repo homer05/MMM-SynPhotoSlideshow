@@ -64,7 +64,7 @@ Add the module to the modules array in the `config/config.js` file. You must pro
 
 This module supports two ways to authenticate with Synology Photos:
 
-📖 **[Complete Synology Setup Guide](SYNOLOGY_SETUP.md)** - For detailed setup instructions, troubleshooting, and examples.
+📖 **[Complete Synology Setup Guide](docs/SYNOLOGY_SETUP.md)** - For detailed setup instructions, troubleshooting, and examples.
 
 #### Method 1: Using Account Credentials (Private Albums)
 
@@ -110,6 +110,24 @@ Perfect for publicly shared albums - no credentials needed:
   },
 ```
 
+You can also filter by tags in shared albums:
+
+```javascript
+  {
+    module: 'MMM-SynPhotoSlideshow',
+    position: 'fullscreen_below',
+    config: {
+      synologyUrl: 'https://your-synology-url.com:5001',
+      synologyShareToken: 'your-share-token-from-link',
+      synologyTagNames: ['Favorites', 'Best'], // Filter shared album by tags
+      synologyMaxPhotos: 1000,
+      slideshowSpeed: 60000,
+      transitionImages: true,
+      randomizeImageOrder: true
+    }
+  },
+```
+
 #### Filtering by Tags
 
 You can filter photos by tags assigned in Synology Photos. This is useful for displaying specific categories of photos (e.g., 'Vacation', 'Family', 'Favorites'):
@@ -131,7 +149,7 @@ You can filter photos by tags assigned in Synology Photos. This is useful for di
   },
 ```
 
-**Note:** Tag filtering is only available when using account credentials (not with shared album tokens). If a photo has multiple matching tags, it will only appear once in the slideshow.
+**Note:** Tag filtering works with both personal accounts (using credentials) and shared albums (using share tokens). When using personal account credentials, photos are fetched from both your personal space and any shared spaces you have access to. If a photo has multiple matching tags, it will only appear once in the slideshow.
 
 I also recommend adding the following to the `custom.css` to make the text a little brighter:
 
@@ -256,7 +274,7 @@ The following properties can be configured:
     </tr>
     <tr>
       <td><code>synologyTagNames</code></td>
-      <td>Array of strings, tag names to filter photos by. Photos must have at least one of these tags to be included. Not available with shared album tokens. Takes priority over synologyAlbumName.<br>
+      <td>Array of strings, tag names to filter photos by. Photos must have at least one of these tags to be included. Works with both personal accounts (credentials) and shared albums (share tokens). Takes priority over synologyAlbumName.<br>
         <br><b>Example:</b> <code>['Vacation', 'Family', 'Favorites']</code>
         <br><b>Default value:</b> <code>[]</code>
         <br>This value is <b>OPTIONAL</b>
@@ -275,6 +293,14 @@ The following properties can be configured:
       <td>Integer value, maximum number of photos to fetch from Synology Photos in a single request.<br>
         <br><b>Example:</b> <code>500</code>
         <br><b>Default value:</b> <code>1000</code>
+        <br>This value is <b>OPTIONAL</b>
+      </td>
+    </tr>
+    <tr>
+      <td><code>refreshImageListInterval</code></td>
+      <td>Integer value, how often to refresh the image list from Synology Photos, in milliseconds. This allows the slideshow to automatically pick up new photos or changes without restarting MagicMirror. Set to 0 to disable automatic refreshing.<br>
+        <br><b>Example:</b> <code>1800000</code> for 30 minutes
+        <br><b>Default value:</b> <code>3600000</code> or 1 hour
         <br>This value is <b>OPTIONAL</b>
       </td>
     </tr>
@@ -316,6 +342,14 @@ The following properties can be configured:
       <td>Boolean value, if true will randomize the order of the images, otherwise use sortImagesBy and sortImagesDescending sorting by filename.<br>
         <br><b>Example:</b> <code>true</code>
         <br><b>Default value:</b> <code>false</code>
+        <br>This value is <b>OPTIONAL</b>
+      </td>
+    </tr>
+    <tr>
+      <td><code>fitPortraitImages</code></td>
+      <td>Boolean value, if true portrait images will be automatically resized to fit on landscape screens using 'contain' mode with black bars on the sides to prevent distortion. This ensures portrait photos display completely without being cropped.<br>
+        <br><b>Example:</b> <code>false</code>
+        <br><b>Default value:</b> <code>true</code>
         <br>This value is <b>OPTIONAL</b>
       </td>
     </tr>
