@@ -35,10 +35,22 @@
     "eslint": "^9.31.0",
     "eslint-plugin-import-x": "^4.16.1",
     "globals": "^16.3.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
     "prettier": "^3.6.2"
   },
   "scripts": {
     "lint": "prettier --check . && eslint",
-    "lint:fix": "prettier --write . && eslint --fix"
+    "lint:fix": "prettier --write . && eslint --fix",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,mjs,css}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{md,json}": [
+      "prettier --write"
+    ]
   }
 }
