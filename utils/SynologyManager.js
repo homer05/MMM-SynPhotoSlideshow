@@ -1,6 +1,6 @@
 /**
  * SynologyManager.js
- * 
+ *
  * Manages Synology Photos integration
  */
 
@@ -8,7 +8,7 @@ const Log = require('../../../js/logger.js');
 const SynologyPhotosClient = require('./SynologyPhotosClient.js');
 
 class SynologyManager {
-  constructor() {
+  constructor () {
     this.client = null;
     this.photos = [];
   }
@@ -16,19 +16,19 @@ class SynologyManager {
   /**
    * Fetch photos from Synology Photos
    */
-  async fetchPhotos(config) {
+  async fetchPhotos (config) {
     try {
       Log.info('[MMM-SynPhotoSlideshow] Initializing Synology Photos client...');
-      
+
       this.client = new SynologyPhotosClient(config);
-      
+
       // Authenticate (if not using shared album)
       const authenticated = await this.client.authenticate();
       if (!authenticated && !config.synologyShareToken) {
         Log.error('[MMM-SynPhotoSlideshow] Failed to authenticate with Synology');
         return [];
       }
-      
+
       // Find tags if specified
       if (config.synologyTagNames && config.synologyTagNames.length > 0) {
         const tagsFound = await this.client.findTags();
@@ -37,29 +37,28 @@ class SynologyManager {
           return [];
         }
       }
-      
+
       // Find album if specified (only for personal accounts without tags)
-      if (config.synologyAlbumName && 
-          !config.synologyShareToken && 
-          (!config.synologyTagNames || config.synologyTagNames.length === 0)) {
+      if (config.synologyAlbumName &&
+        !config.synologyShareToken &&
+        (!config.synologyTagNames || config.synologyTagNames.length === 0)) {
         const albumFound = await this.client.findAlbum();
         if (!albumFound) {
           Log.error('[MMM-SynPhotoSlideshow] Failed to find Synology album');
           return [];
         }
       }
-      
+
       // Fetch photos
       const photos = await this.client.fetchPhotos();
-      
+
       if (photos && photos.length > 0) {
         Log.info(`[MMM-SynPhotoSlideshow] Retrieved ${photos.length} photos from Synology`);
         this.photos = photos;
         return photos;
-      } else {
-        Log.warn('[MMM-SynPhotoSlideshow] No photos found in Synology');
-        return [];
       }
+      Log.warn('[MMM-SynPhotoSlideshow] No photos found in Synology');
+      return [];
     } catch (error) {
       Log.error(`[MMM-SynPhotoSlideshow] Error fetching Synology photos: ${error.message}`);
       return [];
@@ -69,21 +68,21 @@ class SynologyManager {
   /**
    * Get the Synology client instance
    */
-  getClient() {
+  getClient () {
     return this.client;
   }
 
   /**
    * Get cached photos
    */
-  getPhotos() {
+  getPhotos () {
     return this.photos;
   }
 
   /**
    * Check if using Synology
    */
-  isInitialized() {
+  isInitialized () {
     return this.client !== null;
   }
 }

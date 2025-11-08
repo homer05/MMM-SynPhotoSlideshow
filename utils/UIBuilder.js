@@ -1,18 +1,18 @@
 /**
  * UIBuilder.js
- * 
+ *
  * Handles UI element creation (gradients, info divs, progress bars)
  */
 
 class UIBuilder {
-  constructor(config) {
+  constructor (config) {
     this.config = config;
   }
 
   /**
    * Create gradient div
    */
-  createGradientDiv(direction, gradient, wrapper) {
+  createGradientDiv (direction, gradient, wrapper) {
     const div = document.createElement('div');
     div.style.backgroundImage = `linear-gradient( to ${direction}, ${gradient.join()})`;
     div.className = 'gradient';
@@ -22,7 +22,7 @@ class UIBuilder {
   /**
    * Create radial gradient div
    */
-  createRadialGradientDiv(type, gradient, wrapper) {
+  createRadialGradientDiv (type, gradient, wrapper) {
     const div = document.createElement('div');
     div.style.backgroundImage = `radial-gradient( ${type}, ${gradient.join()})`;
     div.className = 'gradient';
@@ -32,7 +32,7 @@ class UIBuilder {
   /**
    * Create image info div
    */
-  createImageInfoDiv(wrapper) {
+  createImageInfoDiv (wrapper) {
     const div = document.createElement('div');
     div.className = `info ${this.config.imageInfoLocation}`;
     wrapper.appendChild(div);
@@ -42,7 +42,7 @@ class UIBuilder {
   /**
    * Create progress bar div
    */
-  createProgressbarDiv(wrapper, slideshowSpeed) {
+  createProgressbarDiv (wrapper, slideshowSpeed) {
     const div = document.createElement('div');
     div.className = 'progress';
     const inner = document.createElement('div');
@@ -56,10 +56,10 @@ class UIBuilder {
   /**
    * Restart progress bar animation
    */
-  restartProgressBar() {
+  restartProgressBar () {
     const oldDiv = document.querySelector('.progress-inner');
     if (!oldDiv) return;
-    
+
     const newDiv = oldDiv.cloneNode(true);
     oldDiv.parentNode.replaceChild(newDiv, oldDiv);
     newDiv.style.display = '';
@@ -68,9 +68,9 @@ class UIBuilder {
   /**
    * Update image info display
    */
-  updateImageInfo(imageInfoDiv, imageinfo, imageDate, translate) {
+  updateImageInfo (imageInfoDiv, imageinfo, imageDate, translate) {
     const imageProps = [];
-    
+
     this.config.imageInfo.forEach((prop) => {
       switch (prop) {
         case 'date':

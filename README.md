@@ -22,6 +22,7 @@ Based on [MMM-ImageSlideshow](https://github.com/AdamMoses-GitHub/MMM-ImageSlide
 ## Operation
 
 This module connects to your Synology Photos library and fetches your photo collection. You can display:
+
 - All photos from your entire library
 - Photos from a specific album
 - Photos from a publicly shared album (no login required)

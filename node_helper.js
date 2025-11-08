@@ -11,7 +11,7 @@
  * MIT Licensed.
  */
 
-const { exec } = require('node:child_process');
+const {exec} = require('node:child_process');
 const NodeHelper = require('node_helper');
 const Log = require('../../js/logger.js');
 
@@ -25,7 +25,7 @@ const SynologyManager = require('./utils/SynologyManager.js');
 module.exports = NodeHelper.create({
 
   // subclass start method, initializes helper modules
-  start() {
+  start () {
     this.imageListManager = new ImageListManager();
     this.timerManager = new TimerManager();
     this.synologyManager = new SynologyManager();
@@ -38,7 +38,7 @@ module.exports = NodeHelper.create({
   /**
    * Gather image list from Synology
    */
-  async gatherImageList(config, sendNotification) {
+  async gatherImageList (config, sendNotification) {
     // Invalid config - retrieve it again
     if (typeof config === 'undefined' || !config.synologyUrl) {
       this.sendSocketNotification('BACKGROUNDSLIDESHOW_REGISTER_CONFIG');
@@ -67,7 +67,7 @@ module.exports = NodeHelper.create({
   /**
    * Get and display next image
    */
-  getNextImage() {
+  getNextImage () {
     const now = new Date().toISOString();
     Log.info(`[MMM-SynPhotoSlideshow] getNextImage() called at ${now}`);
 
@@ -130,11 +130,10 @@ module.exports = NodeHelper.create({
   },
 
 
-
   /**
    * Refresh the image list from Synology
    */
-  async refreshImageList() {
+  async refreshImageList () {
     Log.info('[MMM-SynPhotoSlideshow] Refreshing image list from Synology...');
 
     // Store current index to maintain position if possible
@@ -154,7 +153,7 @@ module.exports = NodeHelper.create({
     }
 
     // Restart the refresh timer
-    const refreshInterval = this.config?.refreshImageListInterval || (60 * 60 * 1000);
+    const refreshInterval = this.config?.refreshImageListInterval || 60 * 60 * 1000;
     this.timerManager.startRefreshTimer(() => {
       self.refreshImageList();
     }, refreshInterval);
@@ -163,7 +162,7 @@ module.exports = NodeHelper.create({
   /**
    * Get previous image
    */
-  getPrevImage() {
+  getPrevImage () {
     const image = this.imageListManager.getPreviousImage();
     if (!image) {
       Log.error('[MMM-SynPhotoSlideshow] Failed to get previous image');
@@ -175,7 +174,7 @@ module.exports = NodeHelper.create({
   /**
    * Handle socket notifications from module
    */
-  socketNotificationReceived(notification, payload) {
+  socketNotificationReceived (notification, payload) {
     if (notification === 'BACKGROUNDSLIDESHOW_REGISTER_CONFIG') {
       const config = payload;
       this.config = config;
@@ -189,12 +188,11 @@ module.exports = NodeHelper.create({
         this.getNextImage();
 
         // Start the refresh timer
-        const refreshInterval = config?.refreshImageListInterval || (60 * 60 * 1000);
+        const refreshInterval = config?.refreshImageListInterval || 60 * 60 * 1000;
         this.timerManager.startRefreshTimer(() => {
           self.refreshImageList();
         }, refreshInterval);
       }, 200);
-
     } else if (notification === 'BACKGROUNDSLIDESHOW_PLAY_VIDEO') {
       Log.info('[MMM-SynPhotoSlideshow] Playing video');
       Log.info(`[MMM-SynPhotoSlideshow] cmd: omxplayer --win 0,0,1920,1080 --alpha 180 ${payload[0]}`);
@@ -202,25 +200,21 @@ module.exports = NodeHelper.create({
         this.sendSocketNotification('BACKGROUNDSLIDESHOW_PLAY', null);
         Log.info('[MMM-SynPhotoSlideshow] Video playback complete');
       });
-
     } else if (notification === 'BACKGROUNDSLIDESHOW_NEXT_IMAGE') {
       Log.debug('[MMM-SynPhotoSlideshow] BACKGROUNDSLIDESHOW_NEXT_IMAGE');
       this.getNextImage();
-
     } else if (notification === 'BACKGROUNDSLIDESHOW_PREV_IMAGE') {
       Log.debug('[MMM-SynPhotoSlideshow] BACKGROUNDSLIDESHOW_PREV_IMAGE');
       this.getPrevImage();
-
     } else if (notification === 'BACKGROUNDSLIDESHOW_PAUSE') {
       this.timerManager.stopAllTimers();
-
     } else if (notification === 'BACKGROUNDSLIDESHOW_PLAY') {
       const slideshowSpeed = this.config?.slideshowSpeed || 10000;
       this.timerManager.startSlideshowTimer(() => {
         self.getNextImage();
       }, slideshowSpeed);
 
-      const refreshInterval = this.config?.refreshImageListInterval || (60 * 60 * 1000);
+      const refreshInterval = this.config?.refreshImageListInterval || 60 * 60 * 1000;
       this.timerManager.startRefreshTimer(() => {
         self.refreshImageList();
       }, refreshInterval);

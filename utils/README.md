@@ -7,15 +7,18 @@ The MMM-SynPhotoSlideshow module uses a set of utility modules to organize code 
 These modules run in the browser and handle UI and display logic.
 
 ### ConfigValidator.js
+
 **Purpose:** Configuration validation and normalization
 
 **Responsibilities:**
+
 - Validates required configuration parameters
 - Normalizes image info settings
 - Sets up default transition speeds
 - Ensures proper configuration format
 
 **Key Methods:**
+
 - `validateConfig(config)` - Validates and normalizes the entire config object
 - `checkRequiredConfig(config)` - Checks for required parameters like `synologyUrl`
 
@@ -24,9 +27,11 @@ These modules run in the browser and handle UI and display logic.
 ---
 
 ### ImageHandler.js
+
 **Purpose:** Image display, sizing, and orientation management
 
 **Responsibilities:**
+
 - Creates image div elements
 - Detects portrait vs landscape orientation
 - Applies fit modes (letterboxing for portrait/landscape)
@@ -34,6 +39,7 @@ These modules run in the browser and handle UI and display logic.
 - Manages EXIF orientation transformations
 
 **Key Methods:**
+
 - `createImageDiv()` - Creates a new image div with default styling
 - `applyFitMode(imageDiv, image)` - Applies portrait-mode or landscape-mode classes
 - `applyAnimation(imageDiv, image)` - Applies slide/zoom animations
@@ -45,15 +51,18 @@ These modules run in the browser and handle UI and display logic.
 ---
 
 ### UIBuilder.js
+
 **Purpose:** UI element creation and management
 
 **Responsibilities:**
+
 - Creates gradient overlays
 - Manages image info display
 - Handles progress bar creation and updates
 - Formats and displays image metadata
 
 **Key Methods:**
+
 - `createGradientDiv(direction, gradient, wrapper)` - Creates linear gradient overlays
 - `createRadialGradientDiv(type, gradient, wrapper)` - Creates radial gradient overlays
 - `createImageInfoDiv(wrapper)` - Creates the image info display area
@@ -66,14 +75,17 @@ These modules run in the browser and handle UI and display logic.
 ---
 
 ### TransitionHandler.js
+
 **Purpose:** Image transition effects management
 
 **Responsibilities:**
+
 - Creates transition div elements with animations
 - Cleans up old images from DOM
 - Applies transition effects (slide, flip, fade, etc.)
 
 **Key Methods:**
+
 - `createTransitionDiv()` - Creates transition wrapper with animation
 - `cleanupOldImages(imagesDiv)` - Removes old images and fades current image
 
@@ -86,9 +98,11 @@ These modules run in the browser and handle UI and display logic.
 These modules run in Node.js and handle server-side operations.
 
 ### ImageListManager.js
+
 **Purpose:** Image list management and tracking
 
 **Responsibilities:**
+
 - Maintains the current image list and index
 - Sorts images by name, created date, or modified date
 - Shuffles images for random order
@@ -97,6 +111,7 @@ These modules run in Node.js and handle server-side operations.
 - Handles looping back to beginning of list
 
 **Key Methods:**
+
 - `shuffleArray(array)` - Randomly shuffle an array
 - `sortImageList(imageList, sortBy, sortDescending)` - Sort images by various criteria
 - `prepareImageList(images, config)` - Prepare final list based on config
@@ -111,15 +126,18 @@ These modules run in Node.js and handle server-side operations.
 ---
 
 ### TimerManager.js
+
 **Purpose:** Timer management for slideshow and refresh
 
 **Responsibilities:**
+
 - Controls slideshow timer (for advancing images)
 - Controls refresh timer (for reloading image list)
 - Starts, stops, and restarts timers
 - Provides timer status information
 
 **Key Methods:**
+
 - `startSlideshowTimer(callback, interval)` - Start slideshow timer
 - `stopSlideshowTimer()` - Stop slideshow timer
 - `startRefreshTimer(callback, interval)` - Start refresh timer
@@ -133,9 +151,11 @@ These modules run in Node.js and handle server-side operations.
 ---
 
 ### ImageProcessor.js
+
 **Purpose:** Image reading, resizing, and processing
 
 **Responsibilities:**
+
 - Reads local image files
 - Resizes images using Sharp library
 - Downloads images from Synology
@@ -143,6 +163,7 @@ These modules run in Node.js and handle server-side operations.
 - Handles different image formats
 
 **Key Methods:**
+
 - `readFile(filepath, callback, imageUrl, synologyClient)` - Main entry point for reading images
 - `resizeImage(inputPath, callback)` - Resize image to configured dimensions
 - `readFileRaw(filepath, callback)` - Read image without resizing
@@ -153,9 +174,11 @@ These modules run in Node.js and handle server-side operations.
 ---
 
 ### SynologyManager.js
+
 **Purpose:** Synology Photos API integration
 
 **Responsibilities:**
+
 - Initializes Synology Photos client
 - Handles authentication with Synology
 - Finds albums and tags
@@ -163,6 +186,7 @@ These modules run in Node.js and handle server-side operations.
 - Caches Synology client instance
 
 **Key Methods:**
+
 - `fetchPhotos(config)` - Fetch photos from Synology (main entry point)
 - `getClient()` - Get Synology client instance
 - `getPhotos()` - Get cached photos
@@ -173,9 +197,11 @@ These modules run in Node.js and handle server-side operations.
 ---
 
 ### SynologyPhotosClient.js
+
 **Purpose:** Low-level Synology Photos API client
 
 **Responsibilities:**
+
 - Authenticates with Synology Photos API
 - Manages session IDs and tokens
 - Lists albums and finds target albums
@@ -186,6 +212,7 @@ These modules run in Node.js and handle server-side operations.
 - Manages logout and session cleanup
 
 **Key Methods:**
+
 - `authenticate()` - Authenticate with Synology and get session ID
 - `findAlbum()` - Find target album by name
 - `findTags()` - Find tags by name across spaces
@@ -201,8 +228,9 @@ These modules run in Node.js and handle server-side operations.
 - `logout()` - End Synology session
 
 **Space Architecture:**
-- `space_id 0` - Personal space (uses SYNO.Foto.* APIs)
-- `space_id 1` - Shared space (uses SYNO.FotoTeam.* APIs)
+
+- `space_id 0` - Personal space (uses SYNO.Foto.\* APIs)
+- `space_id 1` - Shared space (uses SYNO.FotoTeam.\* APIs)
 - Same tag names can have different IDs in different spaces
 
 **Usage:** Instantiated by SynologyManager
@@ -212,6 +240,7 @@ These modules run in Node.js and handle server-side operations.
 ## Module Organization
 
 ### Frontend Flow
+
 ```
 MMM-SynPhotoSlideshow.js
 ├── ConfigValidator (validates config)
@@ -221,6 +250,7 @@ MMM-SynPhotoSlideshow.js
 ```
 
 ### Backend Flow
+
 ```
 node_helper.js
 ├── ImageListManager (manages image list)
@@ -233,20 +263,26 @@ node_helper.js
 ## Key Concepts
 
 ### Separation of Concerns
+
 Each utility focuses on one specific area, making the codebase:
+
 - Easier to understand
 - Simpler to test
 - More maintainable
 - Less prone to bugs
 
 ### Coordinator Pattern
+
 Main files delegate work to utilities:
+
 - Main modules don't implement complex logic
 - Utilities handle specific responsibilities
 - Clear boundaries between components
 
 ### Reusability
+
 Utilities can be:
+
 - Tested independently
 - Reused in different contexts
 - Modified without affecting other parts
@@ -255,6 +291,7 @@ Utilities can be:
 ## Usage Examples
 
 ### Frontend Example
+
 ```javascript
 // In MMM-SynPhotoSlideshow.js
 this.imageHandler = new ImageHandler(this.config);
@@ -267,6 +304,7 @@ this.uiBuilder.restartProgressBar();
 ```
 
 ### Backend Example
+
 ```javascript
 // In node_helper.js
 this.imageListManager = new ImageListManager();
@@ -327,6 +365,7 @@ When adding new utilities:
 ## Future Enhancements
 
 The modular structure enables easy additions:
+
 - New image sources (Google Photos, iCloud, etc.)
 - New transition effects
 - Advanced image processing

@@ -1,6 +1,6 @@
 /**
  * ImageListManager.js
- * 
+ *
  * Manages the image list, sorting, shuffling, and tracking shown images
  */
 
@@ -8,7 +8,7 @@ const FileSystem = require('node:fs');
 const Log = require('../../../js/logger.js');
 
 class ImageListManager {
-  constructor() {
+  constructor () {
     this.imageList = [];
     this.alreadyShownSet = new Set();
     this.index = 0;
@@ -18,7 +18,7 @@ class ImageListManager {
   /**
    * Shuffle array randomly
    */
-  shuffleArray(array) {
+  shuffleArray (array) {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -30,7 +30,7 @@ class ImageListManager {
   /**
    * Sort by filename
    */
-  sortByFilename(a, b) {
+  sortByFilename (a, b) {
     const aL = a.path.toLowerCase();
     const bL = b.path.toLowerCase();
     if (aL > bL) return 1;
@@ -40,23 +40,23 @@ class ImageListManager {
   /**
    * Sort by created date
    */
-  sortByCreated(a, b) {
+  sortByCreated (a, b) {
     return a.created - b.created;
   }
 
   /**
    * Sort by modified date
    */
-  sortByModified(a, b) {
+  sortByModified (a, b) {
     return a.modified - b.modified;
   }
 
   /**
    * Sort image list based on configuration
    */
-  sortImageList(imageList, sortBy, sortDescending) {
+  sortImageList (imageList, sortBy, sortDescending) {
     let sortedList;
-    
+
     switch (sortBy) {
       case 'created':
         Log.debug('[MMM-SynPhotoSlideshow] Sorting by created date...');
@@ -82,7 +82,7 @@ class ImageListManager {
   /**
    * Read the shown images tracker file
    */
-  readShownImagesTracker() {
+  readShownImagesTracker () {
     try {
       const filesShown = FileSystem.readFileSync(this.trackerFilePath, 'utf8');
       const listOfShownFiles = filesShown.split(/\r?\n/u).filter((line) => line.trim() !== '');
@@ -97,20 +97,20 @@ class ImageListManager {
   /**
    * Add an image to the shown tracker
    */
-  addImageToShown(imgPath) {
+  addImageToShown (imgPath) {
     this.alreadyShownSet.add(imgPath);
-    
+
     if (FileSystem.existsSync(this.trackerFilePath)) {
       FileSystem.appendFileSync(this.trackerFilePath, `${imgPath}\n`);
     } else {
-      FileSystem.writeFileSync(this.trackerFilePath, `${imgPath}\n`, { flag: 'wx' });
+      FileSystem.writeFileSync(this.trackerFilePath, `${imgPath}\n`, {flag: 'wx'});
     }
   }
 
   /**
    * Reset the shown images tracker
    */
-  resetShownImagesTracker() {
+  resetShownImagesTracker () {
     try {
       FileSystem.writeFileSync(this.trackerFilePath, '', 'utf8');
       this.alreadyShownSet.clear();
@@ -123,7 +123,7 @@ class ImageListManager {
   /**
    * Prepare final image list based on configuration
    */
-  prepareImageList(images, config) {
+  prepareImageList (images, config) {
     this.imageList = images;
 
     // Load shown images tracker if needed
@@ -160,7 +160,7 @@ class ImageListManager {
   /**
    * Get next image from the list
    */
-  getNextImage() {
+  getNextImage () {
     if (!this.imageList.length) {
       return null;
     }
@@ -173,14 +173,14 @@ class ImageListManager {
 
     const image = this.imageList[this.index++];
     Log.info(`[MMM-SynPhotoSlideshow] Displaying image ${this.index}/${this.imageList.length}: "${image.path}"`);
-    
+
     return image;
   }
 
   /**
    * Get previous image from the list
    */
-  getPreviousImage() {
+  getPreviousImage () {
     // imageIndex is incremented after displaying, so -2 gets previous
     this.index -= 2;
 
@@ -195,21 +195,21 @@ class ImageListManager {
   /**
    * Check if list is empty
    */
-  isEmpty() {
+  isEmpty () {
     return this.imageList.length === 0;
   }
 
   /**
    * Get current list
    */
-  getList() {
+  getList () {
     return this.imageList;
   }
 
   /**
    * Reset to beginning
    */
-  reset() {
+  reset () {
     this.index = 0;
   }
 }

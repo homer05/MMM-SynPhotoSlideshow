@@ -1,18 +1,18 @@
 /**
  * TransitionHandler.js
- * 
+ *
  * Handles image transitions and animations
  */
 
 class TransitionHandler {
-  constructor(config) {
+  constructor (config) {
     this.config = config;
   }
 
   /**
    * Create transition div with animation
    */
-  createTransitionDiv() {
+  createTransitionDiv () {
     const transitionDiv = document.createElement('div');
     transitionDiv.className = 'transition';
 
@@ -30,12 +30,12 @@ class TransitionHandler {
   /**
    * Clean up old images from DOM
    */
-  cleanupOldImages(imagesDiv) {
+  cleanupOldImages (imagesDiv) {
     // Remove first child if there are more than 2 elements
     if (imagesDiv.childNodes.length > 1) {
       imagesDiv.removeChild(imagesDiv.childNodes[0]);
     }
-    
+
     // Fade out current image if present
     if (imagesDiv.childNodes.length > 0) {
       imagesDiv.childNodes[0].style.opacity = '0';

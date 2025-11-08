@@ -117,7 +117,7 @@ Module.register('MMM-SynPhotoSlideshow', {
   start () {
     // Add identifier to the config
     this.config.identifier = this.identifier;
-    
+
     // Validate and normalize configuration
     this.config = ConfigValidator.validateConfig(this.config);
 
@@ -383,7 +383,7 @@ Module.register('MMM-SynPhotoSlideshow', {
       // Create and configure image div
       const imageDiv = this.imageHandler.createImageDiv();
       imageDiv.style.backgroundImage = `url("${image.src}")`;
-      
+
       // Apply fit mode (portrait/landscape)
       const useFitMode = this.imageHandler.applyFitMode(imageDiv, image);
 

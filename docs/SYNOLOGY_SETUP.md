@@ -15,6 +15,7 @@ This guide will help you configure MMM-SynPhotoSlideshow to pull images from you
 This method uses your Synology account credentials to access your photos.
 
 **Advantages:**
+
 - Access to all your private albums
 - Can specify which album to use
 - No need to create shared links
@@ -51,6 +52,7 @@ This method uses your Synology account credentials to access your photos.
 This method uses a public share link, no login required.
 
 **Advantages:**
+
 - No credentials in config file
 - Works across the internet without VPN
 - Can share specific albums easily
@@ -91,6 +93,7 @@ This method uses a public share link, no login required.
 Filter photos based on tags you've assigned in Synology Photos. Perfect for curated collections!
 
 **Advantages:**
+
 - Display only specific categories of photos
 - Easy to update which photos show (just change tags in Synology Photos)
 - Works across all your albums
@@ -120,6 +123,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 ```
 
 **Notes:**
+
 - Tag filtering works with both personal accounts (credentials) and shared albums (share tokens)
 - When using personal account credentials, photos are retrieved from both:
   - Your personal space (photos you own)
@@ -136,6 +140,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 **Error:** "Synology authentication failed"
 
 **Solutions:**
+
 - Verify your Synology URL is correct
 - Check username and password
 - Ensure Synology Photos is installed and running
@@ -147,6 +152,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 **Error:** "Album not found"
 
 **Solutions:**
+
 - Check the album name spelling (case-sensitive)
 - Leave `synologyAlbumName` empty to fetch from all albums
 - Verify the album exists in Synology Photos web interface
@@ -156,6 +162,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 **Error:** "Error fetching photos: timeout"
 
 **Solutions:**
+
 - Check network connectivity between MagicMirror and Synology
 - Verify firewall settings allow the connection
 - Try using IP address instead of hostname
@@ -164,6 +171,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 ### 4. No Photos Displayed
 
 **Solutions:**
+
 - Check MagicMirror logs: `pm2 logs mm` (if using pm2)
 - Increase `synologyMaxPhotos` if you have many photos
 - Verify photos exist in the specified album
@@ -174,6 +182,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 **Error:** "certificate" or "SSL" errors
 
 **Solutions:**
+
 - Use HTTP instead of HTTPS for local network
 - If using HTTPS, ensure certificate is valid
 - For self-signed certificates, you may need to configure Node.js to accept them
@@ -189,6 +198,7 @@ Filter photos based on tags you've assigned in Synology Photos. Perfect for cura
 ## API Information
 
 This module uses the Synology Photos API:
+
 - `SYNO.API.Auth` - For authentication
 - `SYNO.Foto.Browse.Album` - For listing albums
 - `SYNO.Foto.Browse.Item` - For fetching photos
@@ -207,6 +217,7 @@ This module uses the Synology Photos API:
 ## Example Configurations
 
 ### Family Photo Frame
+
 ```javascript
 {
   module: 'MMM-SynPhotoSlideshow',
@@ -230,6 +241,7 @@ This module uses the Synology Photos API:
 ```
 
 ### Vacation Memories
+
 ```javascript
 {
   module: 'MMM-SynPhotoSlideshow',
@@ -248,6 +260,7 @@ This module uses the Synology Photos API:
 ```
 
 ### Shared Album with Tag Filtering
+
 ```javascript
 {
   module: 'MMM-SynPhotoSlideshow',
@@ -268,6 +281,7 @@ This module uses the Synology Photos API:
 ## Support
 
 For issues or questions:
+
 1. Check MagicMirror logs for detailed error messages
 2. Verify Synology Photos API is accessible via web browser
 3. Open an issue on the GitHub repository with logs and configuration (remove sensitive data)

@@ -1,6 +1,6 @@
 /**
  * ImageProcessor.js
- * 
+ *
  * Handles image reading, resizing, and processing
  */
 
@@ -9,16 +9,16 @@ const sharp = require('sharp');
 const Log = require('../../../js/logger.js');
 
 class ImageProcessor {
-  constructor(config) {
+  constructor (config) {
     this.config = config;
   }
 
   /**
    * Resize image using sharp
    */
-  resizeImage(inputPath, callback) {
+  resizeImage (inputPath, callback) {
     Log.log(`[MMM-SynPhotoSlideshow] Resizing image to max: ${this.config.maxWidth}x${this.config.maxHeight}`);
-    
+
     const transformer = sharp()
       .rotate()
       .resize({
@@ -27,7 +27,7 @@ class ImageProcessor {
         fit: 'inside',
       })
       .keepMetadata()
-      .jpeg({ quality: 80 });
+      .jpeg({quality: 80});
 
     const outputStream = [];
 
@@ -50,7 +50,7 @@ class ImageProcessor {
   /**
    * Read file without resizing
    */
-  readFileRaw(filepath, callback) {
+  readFileRaw (filepath, callback) {
     const ext = filepath.split('.').pop();
     const chunks = [];
 
@@ -74,11 +74,11 @@ class ImageProcessor {
   /**
    * Download and process Synology image
    */
-  async downloadSynologyImage(imageUrl, synologyClient, callback) {
+  async downloadSynologyImage (imageUrl, synologyClient, callback) {
     try {
       Log.info('[MMM-SynPhotoSlideshow] Downloading Synology image...');
       const imageBuffer = await synologyClient.downloadPhoto(imageUrl);
-      
+
       if (imageBuffer) {
         const base64 = imageBuffer.toString('base64');
         Log.info(`[MMM-SynPhotoSlideshow] Downloaded Synology image: ${imageBuffer.length} bytes`);
@@ -96,7 +96,7 @@ class ImageProcessor {
   /**
    * Read and process image file
    */
-  async readFile(filepath, callback, imageUrl = null, synologyClient = null) {
+  async readFile (filepath, callback, imageUrl = null, synologyClient = null) {
     // Handle Synology images
     if (imageUrl && synologyClient) {
       await this.downloadSynologyImage(imageUrl, synologyClient, callback);

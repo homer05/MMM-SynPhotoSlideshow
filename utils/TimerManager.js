@@ -1,13 +1,13 @@
 /**
  * TimerManager.js
- * 
+ *
  * Manages slideshow and refresh timers
  */
 
 const Log = require('../../../js/logger.js');
 
 class TimerManager {
-  constructor() {
+  constructor () {
     this.slideshowTimer = null;
     this.refreshTimer = null;
   }
@@ -15,7 +15,7 @@ class TimerManager {
   /**
    * Stop slideshow timer
    */
-  stopSlideshowTimer() {
+  stopSlideshowTimer () {
     if (this.slideshowTimer) {
       const now = new Date().toISOString();
       Log.info(`[MMM-SynPhotoSlideshow] Stopping slideshow timer at ${now}`);
@@ -27,13 +27,13 @@ class TimerManager {
   /**
    * Start or restart slideshow timer
    */
-  startSlideshowTimer(callback, interval) {
+  startSlideshowTimer (callback, interval) {
     this.stopSlideshowTimer();
-    
+
     const now = new Date().toISOString();
     const seconds = (interval / 1000).toFixed(1);
     Log.info(`[MMM-SynPhotoSlideshow] Starting slideshow timer at ${now} with interval: ${interval}ms (${seconds}s)`);
-    
+
     this.slideshowTimer = setTimeout(() => {
       const triggerTime = new Date().toISOString();
       Log.info(`[MMM-SynPhotoSlideshow] Slideshow timer triggered at ${triggerTime}`);
@@ -44,7 +44,7 @@ class TimerManager {
   /**
    * Stop refresh timer
    */
-  stopRefreshTimer() {
+  stopRefreshTimer () {
     if (this.refreshTimer) {
       const now = new Date().toISOString();
       Log.info(`[MMM-SynPhotoSlideshow] Stopping refresh timer at ${now}`);
@@ -56,7 +56,7 @@ class TimerManager {
   /**
    * Start refresh timer
    */
-  startRefreshTimer(callback, interval) {
+  startRefreshTimer (callback, interval) {
     this.stopRefreshTimer();
 
     if (interval <= 0) {
@@ -78,7 +78,7 @@ class TimerManager {
   /**
    * Stop all timers
    */
-  stopAllTimers() {
+  stopAllTimers () {
     this.stopSlideshowTimer();
     this.stopRefreshTimer();
   }
@@ -86,14 +86,14 @@ class TimerManager {
   /**
    * Check if slideshow timer is running
    */
-  isSlideshowTimerRunning() {
+  isSlideshowTimerRunning () {
     return this.slideshowTimer !== null;
   }
 
   /**
    * Check if refresh timer is running
    */
-  isRefreshTimerRunning() {
+  isRefreshTimerRunning () {
     return this.refreshTimer !== null;
   }
 }

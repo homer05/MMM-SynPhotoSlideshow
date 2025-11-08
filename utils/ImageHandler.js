@@ -1,11 +1,11 @@
 /**
  * ImageHandler.js
- * 
+ *
  * Handles image display logic, sizing, and orientation
  */
 
 class ImageHandler {
-  constructor(config) {
+  constructor (config) {
     this.config = config;
     this.browserSupportsExifOrientationNatively = CSS.supports('image-orientation: from-image');
   }
@@ -13,7 +13,7 @@ class ImageHandler {
   /**
    * Create a new image div with default styling
    */
-  createImageDiv() {
+  createImageDiv () {
     const div = document.createElement('div');
     div.style.backgroundSize = this.config.backgroundSize;
     div.style.backgroundPosition = this.config.backgroundPosition;
@@ -25,7 +25,7 @@ class ImageHandler {
    * Apply portrait or landscape mode classes based on image dimensions
    * Returns true if fit mode was applied
    */
-  applyFitMode(imageDiv, image) {
+  applyFitMode (imageDiv, image) {
     if (!this.config.fitPortraitImages) {
       return false;
     }
@@ -51,7 +51,7 @@ class ImageHandler {
   /**
    * Apply background animations if enabled
    */
-  applyAnimation(imageDiv, image) {
+  applyAnimation (imageDiv, image) {
     if (!this.config.backgroundAnimationEnabled || !this.config.animations.length) {
       return;
     }
@@ -71,8 +71,8 @@ class ImageHandler {
   /**
    * Apply slide animation
    */
-  applySlideAnimation(imageDiv, image) {
-    const { width, height } = image;
+  applySlideAnimation (imageDiv, image) {
+    const {width, height} = image;
     const adjustedWidth = width * window.innerHeight / height;
     const adjustedHeight = height * window.innerWidth / width;
 
@@ -100,7 +100,7 @@ class ImageHandler {
   /**
    * Get CSS transform for EXIF orientation
    */
-  getImageTransformCss(exifOrientation) {
+  getImageTransformCss (exifOrientation) {
     switch (exifOrientation) {
       case 2:
         return 'scaleX(-1)';
@@ -125,7 +125,7 @@ class ImageHandler {
   /**
    * Apply EXIF orientation transform if browser doesn't support it natively
    */
-  applyExifOrientation(imageDiv, image) {
+  applyExifOrientation (imageDiv, image) {
     if (this.browserSupportsExifOrientationNatively) {
       return;
     }
