@@ -61,11 +61,124 @@ Add the module to the modules array in the `config/config.js` file. You must pro
   },
 ```
 
+### Configuration Options
+
+This module supports two configuration methods:
+
+1. **config.js** - Traditional MagicMirror configuration
+2. **Environment Variables** - Recommended for keeping credentials secure
+
+📖 **[Complete Synology Setup Guide](docs/SYNOLOGY_SETUP.md)** - For detailed setup instructions, troubleshooting, and examples.
+
+#### Using Environment Variables (Recommended)
+
+Keep your credentials secure by using environment variables:
+
+1. Copy `.env.example` to `.env`:
+
+   ```bash
+   cd ~/MagicMirror/modules/MMM-SynPhotoSlideshow
+   cp .env.example .env
+   ```
+
+2. Edit `.env` with your settings:
+
+   ```bash
+   nano .env
+   ```
+
+3. Configure the module in `config.js`:
+
+   **Option A: Minimal config (all settings from .env):**
+
+   ```javascript
+   {
+     module: 'MMM-SynPhotoSlideshow',
+     position: 'fullscreen_below',
+     config: {
+       // All settings loaded from .env
+     }
+   }
+   ```
+
+   **Option B: Mix .env and config.js (display settings in config):**
+
+   ```javascript
+   {
+     module: 'MMM-SynPhotoSlideshow',
+     position: 'fullscreen_below',
+     config: {
+       // Credentials loaded from .env
+       // Display settings here
+       slideshowSpeed: 60000,
+       transitionImages: true,
+       randomizeImageOrder: true
+     }
+   }
+   ```
+
+4. Start MagicMirror normally:
+
+   ```bash
+   cd ~/MagicMirror
+   npm start
+   ```
+
+   Check the logs to verify the .env file was loaded:
+
+   ```
+   [MMM-SynPhotoSlideshow] Looking for .env file at: /path/to/.env
+   [MMM-SynPhotoSlideshow] Successfully loaded configuration from .env file
+   [MMM-SynPhotoSlideshow] Using environment variables: SYNOLOGY_URL, SYNOLOGY_ACCOUNT, SYNOLOGY_PASSWORD
+   ```
+
+**Note:** Environment variables override values in `config.js`, so you can mix both methods. See `.env.example` for all 20+ available variables.
+
+#### Troubleshooting .env Loading
+
+If your .env file isn't being loaded, check the logs for:
+
+```bash
+# Look for these messages in MagicMirror logs:
+[MMM-SynPhotoSlideshow] Looking for .env file at: /home/user/MagicMirror/modules/MMM-SynPhotoSlideshow/.env
+[MMM-SynPhotoSlideshow] .env file not found, using config.js values only
+```
+
+Common issues:
+
+- **Wrong location:** .env must be in the module directory (`MMM-SynPhotoSlideshow/.env`)
+- **Typo in filename:** Must be exactly `.env` (starts with a dot)
+- **Missing values:** Check logs for warnings about missing `synologyUrl` or authentication
+- **Syntax errors:** No spaces around `=`, no quotes needed for values
+
+**Working with an empty config.js:**
+
+You can use a completely empty config if all settings are in .env:
+
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {} // Empty - everything from .env
+}
+```
+
+The module will automatically:
+
+1. Load settings from `.env` file in the backend
+2. Log the path where it's looking for `.env`
+3. Show warnings if required values (URL, credentials) are missing from both sources
+
+Check MagicMirror logs after starting to see:
+
+```
+[MMM-SynPhotoSlideshow] Looking for .env file at: /home/user/MagicMirror/modules/MMM-SynPhotoSlideshow/.env
+[MMM-SynPhotoSlideshow] Successfully loaded configuration from .env file
+```
+
 ### Authentication Methods
 
 This module supports two ways to authenticate with Synology Photos:
-
-📖 **[Complete Synology Setup Guide](docs/SYNOLOGY_SETUP.md)** - For detailed setup instructions, troubleshooting, and examples.
 
 #### Method 1: Using Account Credentials (Private Albums)
 

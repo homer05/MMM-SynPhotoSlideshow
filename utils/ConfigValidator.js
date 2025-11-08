@@ -41,16 +41,6 @@ class ConfigValidator {
     return config;
   }
 
-  /**
-   * Check if required config parameters are present
-   */
-  static checkRequiredConfig (config) {
-    if (!config.synologyUrl) {
-      Log.error('[MMM-SynPhotoSlideshow] Missing required parameter synologyUrl.');
-      return false;
-    }
-    return true;
-  }
 }
 
 // Export for Node.js (if needed) or use directly in browser

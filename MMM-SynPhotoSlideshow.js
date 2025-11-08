@@ -343,13 +343,11 @@ Module.register('MMM-SynPhotoSlideshow', {
       this.createProgressbarDiv(wrapper, this.config.slideshowSpeed);
     }
 
-    if (ConfigValidator.checkRequiredConfig(this.config)) {
-      // create an empty image list
-      this.imageList = [];
-      // set beginning image index to 0, as it will auto increment on start
-      this.imageIndex = 0;
-      this.updateImageList();
-    }
+    // Create an empty image list and initialize
+    // Config validation happens in backend after .env is loaded
+    this.imageList = [];
+    this.imageIndex = 0;
+    this.updateImageList();
 
     return wrapper;
   },

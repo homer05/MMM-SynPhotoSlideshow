@@ -22,6 +22,7 @@ const ImageProcessor = require('./utils/ImageProcessor.js');
 const SynologyManager = require('./utils/SynologyManager.js');
 const ImageCache = require('./utils/ImageCache.js');
 const MemoryMonitor = require('./utils/MemoryMonitor.js');
+const ConfigLoader = require('./utils/ConfigLoader.js');
 
 // the main module helper create
 module.exports = NodeHelper.create({
@@ -188,7 +189,8 @@ module.exports = NodeHelper.create({
    */
   socketNotificationReceived (notification, payload) {
     if (notification === 'BACKGROUNDSLIDESHOW_REGISTER_CONFIG') {
-      const config = payload;
+      // Merge environment variables with config
+      const config = ConfigLoader.initialize(payload);
       this.config = config;
 
       // Initialize memory monitor if enabled

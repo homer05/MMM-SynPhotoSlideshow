@@ -10,6 +10,56 @@ This guide will help you configure MMM-SynPhotoSlideshow to pull images from you
 
 ## Configuration Methods
 
+You can configure this module using either:
+
+- **Environment variables** (recommended for security)
+- **config.js** (traditional method)
+- **Both** (environment variables override config.js)
+
+### Using Environment Variables (Recommended)
+
+Store credentials securely outside your config file:
+
+1. **Copy the example file:**
+
+   ```bash
+   cd ~/MagicMirror/modules/MMM-SynPhotoSlideshow
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your credentials:**
+
+   ```bash
+   nano .env
+   ```
+
+   Example `.env` file:
+
+   ```bash
+   SYNOLOGY_URL=http://192.168.1.100:5000
+   SYNOLOGY_ACCOUNT=your-username
+   SYNOLOGY_PASSWORD=your-password
+   SYNOLOGY_ALBUM_NAME=MagicMirror
+   SYNOLOGY_MAX_PHOTOS=1000
+   SLIDESHOW_SPEED=60000
+   RANDOMIZE_IMAGE_ORDER=true
+   ```
+
+3. **Configure module in `config.js` (without credentials):**
+   ```javascript
+   {
+     module: 'MMM-SynPhotoSlideshow',
+     position: 'fullscreen_below',
+     config: {
+       // Credentials loaded from .env
+       transitionImages: true,
+       // Other display settings...
+     }
+   }
+   ```
+
+**Security Note:** The `.env` file is automatically ignored by git and will not be committed to version control.
+
 ### Method 1: Direct Authentication (Recommended for Local Networks)
 
 This method uses your Synology account credentials to access your photos.
@@ -26,7 +76,7 @@ This method uses your Synology account credentials to access your photos.
    - Local network: `http://[NAS_IP]:5000` (or `https://[NAS_IP]:5001` for SSL)
    - QuickConnect/DDNS: `https://your-nas.synology.me:5001`
 
-2. Add to your MagicMirror `config.js`:
+2. Add to your MagicMirror `config.js` OR `.env` file:
 
 ```javascript
 {
