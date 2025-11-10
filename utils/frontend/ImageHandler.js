@@ -2,9 +2,10 @@
  * ImageHandler.js
  *
  * Handles image display logic, sizing, and orientation
+ * Works in both browser (MagicMirror) and Node.js contexts
  */
 
-const Log = require('./Logger.js');
+/* eslint-disable no-console */
 
 class ImageHandler {
   constructor (config) {
@@ -38,12 +39,14 @@ class ImageHandler {
     // If it's a portrait image on a landscape screen
     if (isPortrait && screenAspectRatio > 1) {
       imageDiv.classList.add('portrait-mode');
-      Log.debug(`Portrait image detected (${image.width}x${image.height}), using contain mode`);
+      console.debug(`[MMM-SynPhotoSlideshow] Portrait image detected (${image.width}x${image.height}), using contain mode`);
       return true;
-    } else if (!isPortrait) {
+    }
+
+    if (!isPortrait) {
       // All landscape images - use full width with black bars on top/bottom
       imageDiv.classList.add('landscape-mode');
-      Log.debug(`Landscape image detected (${image.width}x${image.height}), using contain with letterbox`);
+      console.debug(`[MMM-SynPhotoSlideshow] Landscape image detected (${image.width}x${image.height}), using contain with letterbox`);
       return true;
     }
 
@@ -84,18 +87,16 @@ class ImageHandler {
 
     if (adjustedWidth / window.innerWidth > adjustedHeight / window.innerHeight) {
       // Scrolling horizontally...
-      if (Math.floor(Math.random() * 2)) {
-        imageDiv.className += ' slideH';
-      } else {
-        imageDiv.className += ' slideHInv';
-      }
+      const slideClass = Math.floor(Math.random() * 2)
+        ? ' slideH'
+        : ' slideHInv';
+      imageDiv.className += slideClass;
     } else {
       // Scrolling vertically...
-      if (Math.floor(Math.random() * 2)) {
-        imageDiv.className += ' slideV';
-      } else {
-        imageDiv.className += ' slideVInv';
-      }
+      const slideClass = Math.floor(Math.random() * 2)
+        ? ' slideV'
+        : ' slideVInv';
+      imageDiv.className += slideClass;
     }
   }
 
