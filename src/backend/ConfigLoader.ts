@@ -191,6 +191,15 @@ class ConfigLoader {
     this.setIntFromEnv(merged, 'MAX_WIDTH', 'maxWidth');
     this.setIntFromEnv(merged, 'MAX_HEIGHT', 'maxHeight');
 
+    // Log level setting
+    if (process.env.LOG_LEVEL) {
+      const logLevel = process.env.LOG_LEVEL.toLowerCase();
+      if (['error', 'warn', 'info', 'debug'].includes(logLevel)) {
+        // @ts-expect-error - Dynamic property assignment
+        merged.logLevel = logLevel as 'error' | 'warn' | 'info' | 'debug';
+      }
+    }
+
     return merged as ModuleConfig;
   }
 
@@ -238,6 +247,12 @@ class ConfigLoader {
 
     // Perform comprehensive validation
     this.validateConfig(mergedConfig);
+
+    // Set log level in Logger if specified
+    if (mergedConfig.logLevel) {
+      Log.setLogLevel(mergedConfig.logLevel);
+      Log.info(`Log level set to: ${mergedConfig.logLevel}`);
+    }
 
     return mergedConfig;
   }

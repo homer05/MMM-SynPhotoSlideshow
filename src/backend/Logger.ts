@@ -7,6 +7,8 @@
 
 const LOG_PREFIX = '[MMM-SynPhotoSlideshow]';
 
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
 interface LoggerInterface {
   info(message: string, ...args: unknown[]): void;
   error(message: string, ...args: unknown[]): void;
@@ -18,6 +20,33 @@ interface LoggerInterface {
 class Logger {
   // Lazily load the MagicMirror logger when first needed
   private _log: LoggerInterface | null = null;
+  private _logLevel: LogLevel = 'info';
+
+  /**
+   * Set the log level
+   * @param level - The minimum log level to display
+   */
+  setLogLevel(level: LogLevel): void {
+    this._logLevel = level;
+  }
+
+  /**
+   * Get the current log level
+   */
+  getLogLevel(): LogLevel {
+    return this._logLevel;
+  }
+
+  /**
+   * Check if a log level should be displayed
+   * @private
+   */
+  private _shouldLog(level: LogLevel): boolean {
+    const levels: LogLevel[] = ['error', 'warn', 'info', 'debug'];
+    const currentLevelIndex = levels.indexOf(this._logLevel);
+    const messageLevelIndex = levels.indexOf(level);
+    return messageLevelIndex <= currentLevelIndex;
+  }
 
   /**
    * Get the MagicMirror logger instance
@@ -52,28 +81,36 @@ class Logger {
    * Log info message
    */
   info(message: string, ...args: unknown[]): void {
-    this._getLogger().info(this._formatMessage(message), ...args);
+    if (this._shouldLog('info')) {
+      this._getLogger().info(this._formatMessage(message), ...args);
+    }
   }
 
   /**
    * Log error message
    */
   error(message: string, ...args: unknown[]): void {
-    this._getLogger().error(this._formatMessage(message), ...args);
+    if (this._shouldLog('error')) {
+      this._getLogger().error(this._formatMessage(message), ...args);
+    }
   }
 
   /**
    * Log warning message
    */
   warn(message: string, ...args: unknown[]): void {
-    this._getLogger().warn(this._formatMessage(message), ...args);
+    if (this._shouldLog('warn')) {
+      this._getLogger().warn(this._formatMessage(message), ...args);
+    }
   }
 
   /**
    * Log debug message
    */
   debug(message: string, ...args: unknown[]): void {
-    this._getLogger().debug(this._formatMessage(message), ...args);
+    if (this._shouldLog('debug')) {
+      this._getLogger().debug(this._formatMessage(message), ...args);
+    }
   }
 
   /**

@@ -63,6 +63,7 @@ export interface ModuleConfig {
   frameHeight: string;
   framePosition: string;
   frameBackgroundColor: string;
+  logLevel?: 'error' | 'warn' | 'info' | 'debug';
 }
 
 export interface ImageInfo {
