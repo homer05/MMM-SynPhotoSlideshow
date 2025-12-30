@@ -130,7 +130,12 @@ const moduleDefinition: Partial<ModuleInstance> = {
     resizeImages: false,
     maxWidth: 1920,
     maxHeight: 1080,
-    imageInfoNoFileExt: false
+    imageInfoNoFileExt: false,
+    useFixedFrame: false,
+    frameWidth: '80%',
+    frameHeight: '80%',
+    framePosition: 'center',
+    frameBackgroundColor: 'rgba(0, 0, 0, 0.5)'
   } as ModuleConfig,
 
   start(this: ModuleInstance): void {

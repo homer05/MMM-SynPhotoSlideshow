@@ -110,8 +110,21 @@ export default class ModuleController {
   getDom(): HTMLElement {
     const wrapper = document.createElement('div');
 
+    // Apply fixed frame mode if enabled
+    if (this.config.useFixedFrame) {
+      wrapper.classList.add('fixed-frame-mode');
+      this.applyFixedFrameStyles(wrapper);
+    }
+
     this.imagesDiv = document.createElement('div');
     this.imagesDiv.className = 'images';
+    
+    // Apply fixed frame class to images container if enabled
+    if (this.config.useFixedFrame) {
+      this.imagesDiv.classList.add('fixed-frame');
+      this.applyFixedFramePosition(this.imagesDiv);
+    }
+    
     wrapper.appendChild(this.imagesDiv);
 
     // Add gradients INSIDE imagesDiv so they layer properly
@@ -686,5 +699,73 @@ export default class ModuleController {
     slideshowSpeed: number
   ): void {
     this.uiBuilder?.createProgressbarDiv(wrapper, slideshowSpeed);
+  }
+
+  /**
+   * Apply fixed frame styles to wrapper
+   */
+  private applyFixedFrameStyles(wrapper: HTMLElement): void {
+    wrapper.style.setProperty('--frame-background-color', this.config.frameBackgroundColor);
+  }
+
+  /**
+   * Apply fixed frame position and size to images container
+   */
+  private applyFixedFramePosition(imagesDiv: HTMLDivElement): void {
+    imagesDiv.style.setProperty('--frame-width', this.config.frameWidth);
+    imagesDiv.style.setProperty('--frame-height', this.config.frameHeight);
+
+    // Calculate position based on framePosition setting
+    const position = this.config.framePosition.toLowerCase();
+    let top = '50%';
+    let left = '50%';
+    let transform = 'translate(-50%, -50%)';
+
+    switch (position) {
+      case 'top':
+        top = '0';
+        transform = 'translate(-50%, 0)';
+        break;
+      case 'bottom':
+        top = '100%';
+        transform = 'translate(-50%, -100%)';
+        break;
+      case 'left':
+        left = '0';
+        transform = 'translate(0, -50%)';
+        break;
+      case 'right':
+        left = '100%';
+        transform = 'translate(-100%, -50%)';
+        break;
+      case 'top-left':
+        top = '0';
+        left = '0';
+        transform = 'translate(0, 0)';
+        break;
+      case 'top-right':
+        top = '0';
+        left = '100%';
+        transform = 'translate(-100%, 0)';
+        break;
+      case 'bottom-left':
+        top = '100%';
+        left = '0';
+        transform = 'translate(0, -100%)';
+        break;
+      case 'bottom-right':
+        top = '100%';
+        left = '100%';
+        transform = 'translate(-100%, -100%)';
+        break;
+      case 'center':
+      default:
+        // Default values already set
+        break;
+    }
+
+    imagesDiv.style.setProperty('--frame-top', top);
+    imagesDiv.style.setProperty('--frame-left', left);
+    imagesDiv.style.transform = transform;
   }
 }

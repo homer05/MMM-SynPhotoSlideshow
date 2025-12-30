@@ -10,6 +10,18 @@
 		height: 100%;
 		overflow: hidden;
 
+		/* Fixed frame mode */
+		&.fixed-frame {
+			position: absolute;
+			width: var(--frame-width, 80%);
+			height: var(--frame-height, 80%);
+			top: var(--frame-top, 50%);
+			left: var(--frame-left, 50%);
+			border-radius: 4px;
+			box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+			overflow: hidden;
+		}
+
 		/* Transition wrapper for each image */
 		.transition {
 		position: absolute;
@@ -114,6 +126,30 @@
 				width: 0;
 				transition: width linear;
 			}
+		}
+	}
+}
+
+/* Fixed frame background overlay */
+.MMM-SynPhotoSlideshow {
+	&.fixed-frame-mode {
+		position: relative;
+		width: 100%;
+		height: 100%;
+
+		&::before {
+			content: '';
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: var(--frame-background-color, rgba(0, 0, 0, 0.5));
+			z-index: 0;
+		}
+
+		.images {
+			z-index: 1;
 		}
 	}
 }

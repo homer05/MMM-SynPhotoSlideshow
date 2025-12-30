@@ -55,6 +55,11 @@ export interface ModuleConfig {
   maxWidth: number;
   maxHeight: number;
   imageInfoNoFileExt: boolean;
+  useFixedFrame: boolean;
+  frameWidth: string;
+  frameHeight: string;
+  framePosition: string;
+  frameBackgroundColor: string;
 }
 
 export interface ImageInfo {

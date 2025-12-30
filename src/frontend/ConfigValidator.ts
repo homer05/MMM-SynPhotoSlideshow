@@ -41,6 +41,38 @@ class ConfigValidator {
       config.backgroundAnimationDuration = `${config.slideshowSpeed / 1000}s`;
     }
 
+    // Validate fixed frame configuration
+    if (config.useFixedFrame) {
+      // Ensure frameWidth and frameHeight are valid CSS values
+      if (!config.frameWidth || typeof config.frameWidth !== 'string') {
+        config.frameWidth = '80%';
+      }
+      if (!config.frameHeight || typeof config.frameHeight !== 'string') {
+        config.frameHeight = '80%';
+      }
+      
+      // Validate framePosition
+      const validPositions = [
+        'center',
+        'top',
+        'bottom',
+        'left',
+        'right',
+        'top-left',
+        'top-right',
+        'bottom-left',
+        'bottom-right'
+      ];
+      if (!validPositions.includes(config.framePosition.toLowerCase())) {
+        config.framePosition = 'center';
+      }
+      
+      // Ensure frameBackgroundColor is a valid CSS color
+      if (!config.frameBackgroundColor || typeof config.frameBackgroundColor !== 'string') {
+        config.frameBackgroundColor = 'rgba(0, 0, 0, 0.5)';
+      }
+    }
+
     return config;
   }
 }
