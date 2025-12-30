@@ -122,6 +122,30 @@ class ConfigLoader {
       );
     }
 
+    // Person IDs (comma-separated numbers)
+    // KI-generated person albums from personal_space
+    if (process.env.SYNOLOGY_PERSON_IDS) {
+      merged.synologyPersonIds = process.env.SYNOLOGY_PERSON_IDS.split(',').map(
+        (id) => Number.parseInt(id.trim(), 10)
+      ).filter((id) => !Number.isNaN(id));
+    }
+
+    // Concept IDs (comma-separated numbers)
+    // KI-generated concept albums (themes) from personal_space
+    if (process.env.SYNOLOGY_CONCEPT_IDS) {
+      merged.synologyConceptIds = process.env.SYNOLOGY_CONCEPT_IDS.split(',').map(
+        (id) => Number.parseInt(id.trim(), 10)
+      ).filter((id) => !Number.isNaN(id));
+    }
+
+    // Geocoding IDs (comma-separated numbers)
+    // KI-generated geocoding albums (locations) from personal_space
+    if (process.env.SYNOLOGY_GEOCODING_IDS) {
+      merged.synologyGeocodingIds = process.env.SYNOLOGY_GEOCODING_IDS.split(',').map(
+        (id) => Number.parseInt(id.trim(), 10)
+      ).filter((id) => !Number.isNaN(id));
+    }
+
     // Numeric settings
     this.setIntFromEnv(merged, 'SYNOLOGY_MAX_PHOTOS', 'synologyMaxPhotos');
     this.setIntFromEnv(merged, 'SLIDESHOW_SPEED', 'slideshowSpeed');

@@ -28,18 +28,34 @@ class SynologyManager {
         return [];
       }
 
-      if (config.synologyTagNames && config.synologyTagNames.length > 0) {
+      // Personal space album IDs (persons, concepts, geocoding) have priority over tags and regular albums
+      const hasPersonalSpaceAlbums =
+        (config.synologyPersonIds && config.synologyPersonIds.length > 0) ||
+        (config.synologyConceptIds && config.synologyConceptIds.length > 0) ||
+        (config.synologyGeocodingIds && config.synologyGeocodingIds.length > 0);
+
+      if (hasPersonalSpaceAlbums) {
+        const ids: string[] = [];
+        if (config.synologyPersonIds && config.synologyPersonIds.length > 0) {
+          ids.push(`persons: ${config.synologyPersonIds.join(', ')}`);
+        }
+        if (config.synologyConceptIds && config.synologyConceptIds.length > 0) {
+          ids.push(`concepts: ${config.synologyConceptIds.join(', ')}`);
+        }
+        if (config.synologyGeocodingIds && config.synologyGeocodingIds.length > 0) {
+          ids.push(`geocoding: ${config.synologyGeocodingIds.join(', ')}`);
+        }
+        Log.info(`Using personal space albums: ${ids.join('; ')}`);
+        // No need to find albums, IDs are used directly
+      } else if (config.synologyTagNames && config.synologyTagNames.length > 0) {
         const tagsFound = await this.client.findTags();
         if (!tagsFound) {
           Log.error('Failed to find Synology tags');
           return [];
         }
-      }
-
-      if (
+      } else if (
         config.synologyAlbumName &&
-        !config.synologyShareToken &&
-        (!config.synologyTagNames || config.synologyTagNames.length === 0)
+        !config.synologyShareToken
       ) {
         const albumFound = await this.client.findAlbum();
         if (!albumFound) {

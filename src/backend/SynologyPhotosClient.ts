@@ -53,6 +53,12 @@ class SynologyPhotosClient {
 
   private readonly tagNames: string[];
 
+  private readonly personIds: number[];
+
+  private readonly conceptIds: number[];
+
+  private readonly geocodingIds: number[];
+
   private sid: string | null = null;
 
   private folderIds: number[] = [];
@@ -74,6 +80,9 @@ class SynologyPhotosClient {
     this.albumName = config.synologyAlbumName;
     this.shareToken = config.synologyShareToken;
     this.tagNames = config.synologyTagNames || [];
+    this.personIds = config.synologyPersonIds || [];
+    this.conceptIds = config.synologyConceptIds || [];
+    this.geocodingIds = config.synologyGeocodingIds || [];
     this.useSharedAlbum = Boolean(this.shareToken);
     this.maxPhotosToFetch = config.synologyMaxPhotos || 1000;
   }
@@ -318,6 +327,183 @@ class SynologyPhotosClient {
   }
 
   /**
+   * Fetch photos from a person album (KI-generated album)
+   * Uses person_id parameter
+   */
+  private async fetchPersonPhotos(personId: number): Promise<PhotoItem[]> {
+    return await this.tryFetchPersonalSpaceAlbum(
+      personId,
+      'person_id',
+      'person'
+    );
+  }
+
+  /**
+   * Fetch photos from a concept album (KI-generated album)
+   * Uses concept_id parameter
+   */
+  private async fetchConceptPhotos(conceptId: number): Promise<PhotoItem[]> {
+    return await this.tryFetchPersonalSpaceAlbum(
+      conceptId,
+      'concept_id',
+      'concept'
+    );
+  }
+
+  /**
+   * Fetch photos from a geocoding album (KI-generated album)
+   * Uses geocoding_id parameter
+   */
+  private async fetchGeocodingPhotos(geocodingId: number): Promise<PhotoItem[]> {
+    return await this.tryFetchPersonalSpaceAlbum(
+      geocodingId,
+      'geocoding_id',
+      'geocoding'
+    );
+  }
+
+  /**
+   * Try to fetch photos using a specific parameter type
+   */
+  private async tryFetchPersonalSpaceAlbum(
+    albumId: number,
+    paramName: string,
+    typeName: string
+  ): Promise<PhotoItem[]> {
+    try {
+      // For personal space albums, use a reasonable limit
+      // Synology API might have restrictions, so we use a safe default
+      const limit = Math.min(this.maxPhotosToFetch || 1000, 5000);
+
+      const params: Record<string, unknown> = {
+        api: 'SYNO.Foto.Browse.Item',
+        version: '1',
+        method: 'list',
+        offset: 0,
+        limit: limit > 0 ? limit : 1000, // Ensure limit is positive
+        space_id: 0,
+        _sid: this.sid,
+        additional:
+          '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id"]'
+      };
+
+      params[paramName] = albumId;
+
+      Log.info(
+        `Trying to fetch personal space album ${albumId} as ${typeName} (${paramName})`
+      );
+
+      const response = await axios.get(`${this.baseUrl}${this.photosApiPath}`, {
+        params,
+        timeout: 30000
+      });
+
+      if (response.data.success) {
+        const rawPhotos: SynologyPhoto[] = response.data.data.list;
+        Log.info(
+          `Successfully fetched ${rawPhotos.length} photos for personal space album ${albumId} as ${typeName}`
+        );
+        return this.processPhotoList(rawPhotos, 0);
+      }
+
+      // If error 120 (limit condition), try again without limit or with smaller limit
+      if (response.data.error?.code === 120) {
+        Log.debug(
+          `Limit parameter caused error for ${typeName} ${albumId}, trying with smaller limit`
+        );
+        // Retry with a smaller limit (500 is usually safe)
+        const retryParams: Record<string, unknown> = {
+          ...params,
+          limit: 500
+        };
+        const retryResponse = await axios.get(
+          `${this.baseUrl}${this.photosApiPath}`,
+          {
+            params: retryParams,
+            timeout: 30000
+          }
+        );
+        if (retryResponse.data.success) {
+          const rawPhotos: SynologyPhoto[] = retryResponse.data.data.list;
+          Log.info(
+            `Successfully fetched ${rawPhotos.length} photos for personal space album ${albumId} as ${typeName} (with reduced limit)`
+          );
+          return this.processPhotoList(rawPhotos, 0);
+        }
+      }
+
+      // Log only if it's not a simple "not found" error
+      if (response.data.error?.code !== 609) {
+        Log.debug(
+          `Failed to fetch personal space album ${albumId} as ${typeName}: ${JSON.stringify(response.data)}`
+        );
+      }
+      return [];
+    } catch (error) {
+      Log.debug(
+        `Error trying to fetch personal space album ${albumId} as ${typeName}: ${(error as Error).message}`
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Fetch photos from persons, concepts, and geocoding albums
+   * These are KI-generated albums from the personal_space
+   */
+  private async fetchPhotosByPersonalSpaceAlbums(): Promise<PhotoItem[]> {
+    const fetchPromises: Promise<PhotoItem[]>[] = [];
+
+    // Fetch person photos
+    if (this.personIds.length > 0) {
+      Log.info(`Fetching photos from persons: ${this.personIds.join(', ')}`);
+      for (const personId of this.personIds) {
+        fetchPromises.push(this.fetchPersonPhotos(personId));
+      }
+    }
+
+    // Fetch concept photos
+    if (this.conceptIds.length > 0) {
+      Log.info(`Fetching photos from concepts: ${this.conceptIds.join(', ')}`);
+      for (const conceptId of this.conceptIds) {
+        fetchPromises.push(this.fetchConceptPhotos(conceptId));
+      }
+    }
+
+    // Fetch geocoding photos
+    if (this.geocodingIds.length > 0) {
+      Log.info(`Fetching photos from geocoding: ${this.geocodingIds.join(', ')}`);
+      for (const geocodingId of this.geocodingIds) {
+        fetchPromises.push(this.fetchGeocodingPhotos(geocodingId));
+      }
+    }
+
+    if (fetchPromises.length === 0) {
+      return [];
+    }
+
+    try {
+      const photoArrays = await Promise.all(fetchPromises);
+      const photos = photoArrays.flat();
+
+      const totalAlbums =
+        this.personIds.length +
+        this.conceptIds.length +
+        this.geocodingIds.length;
+      Log.info(
+        `Fetched ${photos.length} photos from ${totalAlbums} personal space album(s)`
+      );
+
+      return this.removeDuplicatePhotos(photos);
+    } catch (error) {
+      Log.error(
+        `Error fetching photos from personal space albums: ${(error as Error).message}`
+      );
+      return [];
+    }
+  }
+
+  /**
    * Fetch photos by tags across spaces
    */
   private async fetchPhotosByTags(): Promise<PhotoItem[]> {
@@ -375,7 +561,15 @@ class SynologyPhotosClient {
     try {
       let photos: PhotoItem[] = [];
 
-      if (this.tagIds && Object.keys(this.tagIds).length > 0) {
+      // Priority: personal space albums (persons, concepts, geocoding) > tags > shared album > regular albums
+      const hasPersonalSpaceAlbums =
+        (this.personIds && this.personIds.length > 0) ||
+        (this.conceptIds && this.conceptIds.length > 0) ||
+        (this.geocodingIds && this.geocodingIds.length > 0);
+
+      if (hasPersonalSpaceAlbums) {
+        photos = await this.fetchPhotosByPersonalSpaceAlbums();
+      } else if (this.tagIds && Object.keys(this.tagIds).length > 0) {
         photos = await this.fetchPhotosByTags();
       } else if (this.useSharedAlbum) {
         photos = await this.fetchSharedAlbumPhotos();

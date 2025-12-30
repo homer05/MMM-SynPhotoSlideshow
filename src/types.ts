@@ -16,6 +16,9 @@ export interface ModuleConfig {
   synologyPassword: string;
   synologyAlbumName: string;
   synologyTagNames: string[];
+  synologyPersonIds: number[];
+  synologyConceptIds: number[];
+  synologyGeocodingIds: number[];
   synologyShareToken: string;
   synologyMaxPhotos: number;
   refreshImageListInterval: number;
