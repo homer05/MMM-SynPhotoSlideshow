@@ -149,6 +149,9 @@ class ConfigLoader {
     // Numeric settings
     this.setIntFromEnv(merged, 'SYNOLOGY_MAX_PHOTOS', 'synologyMaxPhotos');
     this.setIntFromEnv(merged, 'SLIDESHOW_SPEED', 'slideshowSpeed');
+    if (process.env.SLIDESHOW_SPEED) {
+      Log.info(`SLIDESHOW_SPEED from env: ${process.env.SLIDESHOW_SPEED}, merged slideshowSpeed: ${merged.slideshowSpeed}`);
+    }
     this.setIntFromEnv(
       merged,
       'REFRESH_IMAGE_LIST_INTERVAL',
@@ -195,7 +198,6 @@ class ConfigLoader {
     if (process.env.LOG_LEVEL) {
       const logLevel = process.env.LOG_LEVEL.toLowerCase();
       if (['error', 'warn', 'info', 'debug'].includes(logLevel)) {
-        // @ts-expect-error - Dynamic property assignment
         merged.logLevel = logLevel as 'error' | 'warn' | 'info' | 'debug';
       }
     }

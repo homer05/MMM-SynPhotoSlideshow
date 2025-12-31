@@ -207,6 +207,7 @@ export default class SlideshowController {
     );
 
     const slideshowSpeed = this.config?.slideshowSpeed || 10000;
+    Log.info(`Using slideshowSpeed: ${slideshowSpeed}ms (${slideshowSpeed / 1000}s)`);
     this.timerManager.startSlideshowTimer(() => {
       void this.getNextImage();
     }, slideshowSpeed);

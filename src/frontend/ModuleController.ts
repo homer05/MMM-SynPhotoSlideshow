@@ -63,6 +63,8 @@ export default class ModuleController {
 
   private savedImages: string[] | null = null;
 
+  private backendManagesSlideshow = true; // Backend manages slideshow timing by default
+
   private savedIndex: number | null = null;
 
   private readonly callbacks: NotificationCallbacks;
@@ -224,9 +226,8 @@ export default class ModuleController {
       '[MMM-SynPhotoSlideshow] READY notification, identifier match:',
       typedPayload.identifier === this.identifier
     );
-    if (typedPayload.identifier === this.identifier && !this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -244,9 +245,8 @@ export default class ModuleController {
     this.Log.log('[MMM-SynPhotoSlideshow] PLAY notification');
     this.updateImage();
     this.callbacks.sendSocketNotification('BACKGROUNDSLIDESHOW_PLAY');
-    if (!this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -286,9 +286,8 @@ export default class ModuleController {
     this.Log.log('[MMM-SynPhotoSlideshow] Changing Background');
     this.suspend();
     this.updateImage();
-    if (!this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -296,9 +295,8 @@ export default class ModuleController {
    */
   private handleNext(): void {
     this.updateImage();
-    if (this.timer && !this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -306,9 +304,8 @@ export default class ModuleController {
    */
   private handlePrevious(): void {
     this.updateImage(true);
-    if (this.timer && !this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -325,13 +322,8 @@ export default class ModuleController {
     const typedPayload = payload as { url?: string; resume?: boolean };
     if (!typedPayload?.url) return;
 
-    if (typedPayload.resume) {
-      if (this.timer) {
-        this.resume();
-      }
-    } else {
-      this.suspend();
-    }
+    // Backend manages slideshow timing, so don't start frontend timer
+    this.suspend();
     this.updateImage(false, typedPayload.url);
   }
 
@@ -376,9 +368,8 @@ export default class ModuleController {
     this.savedImages = null;
     this.savedIndex = null;
     this.updateImage();
-    if (this.timer && !this.playingVideo) {
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -550,6 +541,8 @@ export default class ModuleController {
 
   /**
    * Update to next/previous image
+   * NOTE: When backend manages slideshow, this should only be called for manual navigation.
+   * Backend sends DISPLAY_IMAGE notifications automatically, so we shouldn't request NEXT_IMAGE.
    */
   updateImage(
     backToPreviousImage = false,
@@ -584,10 +577,19 @@ export default class ModuleController {
       return;
     }
 
-    if (backToPreviousImage) {
-      this.callbacks.sendSocketNotification('BACKGROUNDSLIDESHOW_PREV_IMAGE');
+    // Only send NEXT_IMAGE/PREV_IMAGE for manual navigation (when user explicitly requests it)
+    // Backend manages automatic slideshow timing, so we shouldn't request images automatically
+    // If backend manages slideshow, don't send NEXT_IMAGE automatically
+    if (!this.backendManagesSlideshow) {
+      if (backToPreviousImage) {
+        this.callbacks.sendSocketNotification('BACKGROUNDSLIDESHOW_PREV_IMAGE');
+      } else {
+        this.callbacks.sendSocketNotification('BACKGROUNDSLIDESHOW_NEXT_IMAGE');
+      }
     } else {
-      this.callbacks.sendSocketNotification('BACKGROUNDSLIDESHOW_NEXT_IMAGE');
+      // Backend manages slideshow - only send for explicit manual navigation
+      // This should only happen via handleNext()/handlePrevious() which are called manually
+      this.Log.log('[MMM-SynPhotoSlideshow] updateImage called but backend manages slideshow - ignoring automatic request');
     }
   }
 
@@ -598,10 +600,8 @@ export default class ModuleController {
     this.imageList = urls.splice(0);
     this.imageIndex = 0;
     this.updateImage();
-    if (!this.playingVideo && (this.timer || this.savedImages?.length === 0)) {
-      // Restart timer only if timer was already running
-      this.resume();
-    }
+    // Don't start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically
   }
 
   /**
@@ -631,22 +631,15 @@ export default class ModuleController {
 
   /**
    * Resume the slideshow timer
+   * NOTE: This method is disabled when backend manages slideshow timing.
+   * The backend sends DISPLAY_IMAGE notifications automatically,
+   * so the frontend timer should not run to avoid conflicts.
    */
   resume(): void {
-    this.Log.log('[MMM-SynPhotoSlideshow] Frontend resume called');
+    this.Log.log('[MMM-SynPhotoSlideshow] Frontend resume called - but backend manages slideshow, so timer is disabled');
     this.suspend();
-
-    if (this.config.changeImageOnResume) {
-      this.updateImage();
-    }
-
-    // Set timer for next image
-    this.timer = setTimeout(() => {
-      this.updateImage();
-      if (!this.playingVideo) {
-        this.resume();
-      }
-    }, this.config.slideshowSpeed);
+    // Do not start frontend timer - backend manages slideshow timing
+    // Backend will send DISPLAY_IMAGE notifications automatically based on slideshowSpeed
   }
 
   /**
