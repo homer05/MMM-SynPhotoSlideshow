@@ -370,11 +370,12 @@ class SynologyPhotosClient {
    * Fetch photos from a person album (KI-generated album)
    * Uses person_id parameter
    */
-  private async fetchPersonPhotos(personId: number): Promise<PhotoItem[]> {
+  private async fetchPersonPhotos(personId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       personId,
       'person_id',
-      'person'
+      'person',
+      offset
     );
   }
 
@@ -382,11 +383,12 @@ class SynologyPhotosClient {
    * Fetch photos from a concept album (KI-generated album)
    * Uses concept_id parameter
    */
-  private async fetchConceptPhotos(conceptId: number): Promise<PhotoItem[]> {
+  private async fetchConceptPhotos(conceptId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       conceptId,
       'concept_id',
-      'concept'
+      'concept',
+      offset
     );
   }
 
@@ -394,11 +396,12 @@ class SynologyPhotosClient {
    * Fetch photos from a geocoding album (KI-generated album)
    * Uses geocoding_id parameter
    */
-  private async fetchGeocodingPhotos(geocodingId: number): Promise<PhotoItem[]> {
+  private async fetchGeocodingPhotos(geocodingId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       geocodingId,
       'geocoding_id',
-      'geocoding'
+      'geocoding',
+      offset
     );
   }
 
@@ -408,19 +411,20 @@ class SynologyPhotosClient {
   private async tryFetchPersonalSpaceAlbum(
     albumId: number,
     paramName: string,
-    typeName: string
+    typeName: string,
+    offset: number = 0
   ): Promise<PhotoItem[]> {
     try {
-      // For personal space albums, use the configured limit
-      const limit = this.maxPhotosToFetch || 1000;
-      Log.debug(`Fetching ${typeName} ${albumId} with limit: ${limit} (maxPhotosToFetch: ${this.maxPhotosToFetch})`);
+      // SYNOLOGY_MAX_PHOTOS is now a batch size - fetch exactly that many photos
+      const batchSize = this.maxPhotosToFetch > 0 ? this.maxPhotosToFetch : 100;
+      Log.debug(`Fetching ${typeName} ${albumId} with batch size: ${batchSize}, offset: ${offset}`);
 
       const params: Record<string, unknown> = {
         api: 'SYNO.Foto.Browse.Item',
         version: '1',
         method: 'list',
-        offset: 0,
-        limit: limit > 0 ? limit : 1000, // Ensure limit is positive
+        offset: offset,
+        limit: batchSize,
         space_id: 0,
         _sid: this.sid,
         additional:
@@ -440,24 +444,34 @@ class SynologyPhotosClient {
 
       if (response.data.success) {
         const rawPhotos: SynologyPhoto[] = response.data.data.list || [];
-        Log.debug(`API returned ${rawPhotos.length} photos for ${typeName} ${albumId} (requested limit: ${limit}, maxPhotosToFetch: ${this.maxPhotosToFetch})`);
-        Log.info(
-          `Successfully fetched ${rawPhotos.length} photos for personal space album ${albumId} as ${typeName}`
-        );
+        Log.debug(`API returned ${rawPhotos.length} photos for ${typeName} ${albumId} (batch size: ${batchSize}, offset: ${offset})`);
         
         // Store person_id for person albums (used for alternative download method)
         const personId = paramName === 'person_id' ? albumId : undefined;
         
+        // Process photos first, then sort by creation date (newest first)
+        let processedPhotos = this.processPhotoList(rawPhotos, 0, personId);
+        
+        // Sort by creation date (newest first) to ensure new images are prioritized
+        processedPhotos.sort((a, b) => {
+          const dateA = a.created || 0;
+          const dateB = b.created || 0;
+          return dateB - dateA; // Descending order (newest first)
+        });
+        Log.debug(`After processing: ${processedPhotos.length} photos (filtered from ${rawPhotos.length} raw photos)`);
+        
+        Log.info(
+          `Successfully fetched ${processedPhotos.length} photos for personal space album ${albumId} as ${typeName} (offset: ${offset})`
+        );
+        
         // Debug: Create mapping of unit_id to person_id for person albums
-        if (paramName === 'person_id' && rawPhotos.length > 0) {
-          const unitIds = rawPhotos.map(photo => photo.id).join(', ');
+        if (paramName === 'person_id' && processedPhotos.length > 0) {
+          const unitIds = processedPhotos.map(photo => photo.synologyId).filter(id => id !== undefined).join(', ');
           Log.debug(
-            `Person ID ${albumId} (${typeName}) contains ${rawPhotos.length} photos with unit_ids: ${unitIds}`
+            `Person ID ${albumId} (${typeName}) contains ${processedPhotos.length} photos with unit_ids: ${unitIds}`
           );
         }
         
-        const processedPhotos = this.processPhotoList(rawPhotos, 0, personId);
-        Log.debug(`After processing: ${processedPhotos.length} photos (filtered from ${rawPhotos.length} raw photos)`);
         return processedPhotos;
       }
 
@@ -517,31 +531,36 @@ class SynologyPhotosClient {
   /**
    * Fetch photos from persons, concepts, and geocoding albums
    * These are KI-generated albums from the personal_space
+   * @param offset - Offset for pagination (default: 0)
+   * @param checkForNewFirst - If true, fetch newest photos first (offset 0), then continue with offset
    */
-  private async fetchPhotosByPersonalSpaceAlbums(): Promise<PhotoItem[]> {
+  private async fetchPhotosByPersonalSpaceAlbums(offset: number = 0, checkForNewFirst: boolean = false): Promise<PhotoItem[]> {
     const fetchPromises: Promise<PhotoItem[]>[] = [];
+
+    // If checking for new photos first, fetch offset 0 for all albums
+    const actualOffset = checkForNewFirst ? 0 : offset;
 
     // Fetch person photos
     if (this.personIds.length > 0) {
-      Log.info(`Fetching photos from persons: ${this.personIds.join(', ')}`);
+      Log.info(`Fetching photos from persons: ${this.personIds.join(', ')} (offset: ${actualOffset})`);
       for (const personId of this.personIds) {
-        fetchPromises.push(this.fetchPersonPhotos(personId));
+        fetchPromises.push(this.fetchPersonPhotos(personId, actualOffset));
       }
     }
 
     // Fetch concept photos
     if (this.conceptIds.length > 0) {
-      Log.info(`Fetching photos from concepts: ${this.conceptIds.join(', ')}`);
+      Log.info(`Fetching photos from concepts: ${this.conceptIds.join(', ')} (offset: ${actualOffset})`);
       for (const conceptId of this.conceptIds) {
-        fetchPromises.push(this.fetchConceptPhotos(conceptId));
+        fetchPromises.push(this.fetchConceptPhotos(conceptId, actualOffset));
       }
     }
 
     // Fetch geocoding photos
     if (this.geocodingIds.length > 0) {
-      Log.info(`Fetching photos from geocoding: ${this.geocodingIds.join(', ')}`);
+      Log.info(`Fetching photos from geocoding: ${this.geocodingIds.join(', ')} (offset: ${actualOffset})`);
       for (const geocodingId of this.geocodingIds) {
-        fetchPromises.push(this.fetchGeocodingPhotos(geocodingId));
+        fetchPromises.push(this.fetchGeocodingPhotos(geocodingId, actualOffset));
       }
     }
 
@@ -551,7 +570,21 @@ class SynologyPhotosClient {
 
     try {
       const photoArrays = await Promise.all(fetchPromises);
-      const photos = photoArrays.flat();
+      let photos = photoArrays.flat();
+
+      // Sort by creation date (newest first) to ensure new images are prioritized
+      photos.sort((a, b) => {
+        const dateA = a.created || 0;
+        const dateB = b.created || 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      // SYNOLOGY_MAX_PHOTOS is now a batch size - limit to that many photos
+      const batchSize = this.maxPhotosToFetch > 0 ? this.maxPhotosToFetch : 100;
+      if (photos.length > batchSize) {
+        Log.debug(`Limiting ${photos.length} photos to batch size ${batchSize}`);
+        photos = photos.slice(0, batchSize);
+      }
 
       const totalAlbums =
         this.personIds.length +
@@ -648,8 +681,10 @@ class SynologyPhotosClient {
 
   /**
    * Fetch photos from Synology Photos
+   * @param offset - Offset for pagination (default: 0)
+   * @param checkForNewFirst - If true, fetch newest photos first (offset 0), then continue with offset
    */
-  async fetchPhotos(): Promise<PhotoItem[]> {
+  async fetchPhotos(offset: number = 0, checkForNewFirst: boolean = false): Promise<PhotoItem[]> {
     try {
       let photos: PhotoItem[] = [];
 
@@ -660,7 +695,7 @@ class SynologyPhotosClient {
         (this.geocodingIds && this.geocodingIds.length > 0);
 
       if (hasPersonalSpaceAlbums) {
-        photos = await this.fetchPhotosByPersonalSpaceAlbums();
+        photos = await this.fetchPhotosByPersonalSpaceAlbums(offset, checkForNewFirst);
       } else if (this.tagIds && Object.keys(this.tagIds).length > 0) {
         photos = await this.fetchPhotosByTags();
       } else if (this.useSharedAlbum) {

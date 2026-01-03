@@ -133,6 +133,14 @@ class ImageCache {
   }
 
   /**
+   * Get current cache size in MB
+   */
+  async getCurrentCacheSize(): Promise<number> {
+    await this.calculateCacheSize();
+    return Math.round(this.currentCacheSize / 1024 / 1024);
+  }
+
+  /**
    * Evict old files if cache is too large
    */
   async evictOldFiles(): Promise<void> {

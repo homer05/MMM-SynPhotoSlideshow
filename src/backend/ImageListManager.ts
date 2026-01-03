@@ -11,9 +11,13 @@ import type { ModuleConfig, PhotoItem } from '../types';
 class ImageListManager {
   private imageList: PhotoItem[] = [];
 
+  private nextBatchList: PhotoItem[] = []; // Preloaded next batch
+
   private alreadyShownSet: Set<string> = new Set();
 
   public index = 0;
+
+  private currentBatchOffset: number = 0; // Track current batch offset for pagination
 
   private readonly trackerFilePath =
     'modules/MMM-SynPhotoSlideshow/filesShownTracker.txt';
@@ -110,7 +114,10 @@ class ImageListManager {
   /**
    * Read the shown images tracker file
    */
-  private readShownImagesTracker(): Set<string> {
+  /**
+   * Read shown images tracker (public for external access)
+   */
+  readShownImagesTracker(): Set<string> {
     try {
       const filesShown = FileSystem.readFileSync(this.trackerFilePath, 'utf8');
       const listOfShownFiles = filesShown
@@ -154,23 +161,44 @@ class ImageListManager {
 
   /**
    * Prepare final image list based on configuration
+   * @param images - Images to prepare
+   * @param config - Module configuration
+   * @param isPreload - If true, store as next batch instead of replacing current list
    */
-  prepareImageList(images: PhotoItem[], config: ModuleConfig): PhotoItem[] {
-    this.imageList = images;
-
+  prepareImageList(images: PhotoItem[], config: ModuleConfig, isPreload: boolean = false): PhotoItem[] {
+    const targetList = isPreload ? [] : this.imageList;
+    const workingList = [...images];
+    
     // Load shown images tracker if needed
     if (config.showAllImagesBeforeRestart) {
       this.alreadyShownSet = this.readShownImagesTracker();
     }
 
     // Filter out already shown images
-    const imageListToUse = config.showAllImagesBeforeRestart
-      ? this.imageList.filter((image) => !this.alreadyShownSet.has(image.path))
-      : this.imageList;
+    let imageListToUse = config.showAllImagesBeforeRestart
+      ? workingList.filter((image) => !this.alreadyShownSet.has(image.path))
+      : workingList;
 
-    Log.info(
-      `Skipped ${this.imageList.length - imageListToUse.length} already shown files`
-    );
+    // If configured to show all images before restart, but the filter removed
+    // every image (i.e. all images were previously shown), reset the tracker
+    // and use the full list again so the slideshow can continue cycling.
+    if (
+      config.showAllImagesBeforeRestart &&
+      imageListToUse.length === 0 &&
+      workingList.length > 0 &&
+      !isPreload // Only reset tracker when not preloading
+    ) {
+      Log.info('All images were previously shown — resetting shown tracker');
+      this.resetShownImagesTracker();
+      // Rebuild the list after clearing tracker
+      imageListToUse = workingList;
+    }
+
+    if (!isPreload) {
+      Log.info(
+        `Skipped ${workingList.length - imageListToUse.length} already shown files`
+      );
+    }
 
     // Randomize or sort
     let finalImageList: PhotoItem[];
@@ -184,6 +212,13 @@ class ImageListManager {
       );
     }
 
+    if (isPreload) {
+      // Store as next batch without replacing current list
+      this.nextBatchList = finalImageList;
+      Log.info(`Preloaded next batch with ${finalImageList.length} images`);
+      return finalImageList;
+    }
+    
     this.imageList = finalImageList;
     this.index = 0;
 
@@ -193,16 +228,18 @@ class ImageListManager {
 
   /**
    * Get next image from the list
+   * @returns PhotoItem or null if list is empty
+   * @returns null if all images in current batch have been shown (indicates need to load next batch)
    */
   getNextImage(): PhotoItem | null {
     if (!this.imageList.length) {
       return null;
     }
 
-    // Loop back to beginning if reached the end
+    // Check if we've shown all images in the current batch
     if (this.index >= this.imageList.length) {
-      Log.info('Reached end of list, looping to beginning');
-      this.index = 0;
+      Log.info('All images in current batch have been shown');
+      return null; // Signal to load next batch
     }
 
     const image = this.imageList[this.index++];
@@ -211,6 +248,53 @@ class ImageListManager {
     );
 
     return image;
+  }
+
+  /**
+   * Check if all images in current batch have been shown
+   */
+  areAllImagesShown(): boolean {
+    return this.index >= this.imageList.length;
+  }
+
+  /**
+   * Get current batch offset
+   */
+  getCurrentBatchOffset(): number {
+    return this.currentBatchOffset;
+  }
+
+  /**
+   * Set current batch offset
+   */
+  setCurrentBatchOffset(offset: number): void {
+    this.currentBatchOffset = offset;
+  }
+
+  /**
+   * Increment batch offset by batch size
+   */
+  incrementBatchOffset(batchSize: number): void {
+    this.currentBatchOffset += batchSize;
+  }
+
+  /**
+   * Check if next batch is preloaded
+   */
+  hasNextBatchPreloaded(): boolean {
+    return this.nextBatchList.length > 0;
+  }
+
+  /**
+   * Switch to preloaded next batch
+   */
+  switchToNextBatch(): void {
+    if (this.nextBatchList.length > 0) {
+      Log.info(`Switching to preloaded batch with ${this.nextBatchList.length} images`);
+      this.imageList = this.nextBatchList;
+      this.nextBatchList = [];
+      this.index = 0;
+    }
   }
 
   /**
