@@ -50,7 +50,12 @@ class ImageCache {
    */
   async initialize(): Promise<boolean> {
     try {
-      this.cacheDir = path.join(__dirname, '..', '..', '.image-cache');
+      // Use custom path from config if provided, otherwise use default
+      if (this.config.imageCachePath) {
+        this.cacheDir = this.config.imageCachePath;
+      } else {
+        this.cacheDir = path.join(__dirname, '..', '..', '.image-cache');
+      }
       const maxSizeMB = this.config.imageCacheMaxSize || 500;
       this.maxCacheSize = maxSizeMB * 1024 * 1024;
 
@@ -177,7 +182,9 @@ class ImageCache {
 
         try {
           await fsPromises.unlink(file.path);
-          this.cache.del(file.name);
+          // Extract key from filename (remove extension)
+          const key = file.name.replace(/\.(jpg|jpeg|png|heic|webp)$/i, '');
+          this.cache.del(key);
           this.currentCacheSize -= file.size;
           Log.debug(
             `Evicted ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`
@@ -195,47 +202,80 @@ class ImageCache {
 
   /**
    * Generate cache key from image URL or path
+   * If synologyId and spaceId are provided, use a consistent key based on these IDs
    */
-  getCacheKey(imageIdentifier: string): string {
+  getCacheKey(imageIdentifier: string, synologyId?: number, spaceId?: number | null): string {
+    // Check if this is already a consistent cache key (original_ or thumbnail_)
+    if (imageIdentifier.startsWith('original_') || imageIdentifier.startsWith('thumbnail_')) {
+      return imageIdentifier; // Already a consistent key
+    }
+    
+    // For Synology images, use consistent key based on synologyId and spaceId
+    if (synologyId !== undefined) {
+      // Check if this is a Synology URL for original files
+      if (imageIdentifier.includes('SYNO.Foto.Download') || imageIdentifier.includes('SYNO.FotoTeam.Download')) {
+        return `original_${synologyId}_${spaceId || 0}`;
+      }
+      // Check if this is a Synology URL for thumbnails
+      if (imageIdentifier.includes('SYNO.Foto.Thumbnail') || imageIdentifier.includes('SYNO.FotoTeam.Thumbnail')) {
+        return `thumbnail_${synologyId}_${spaceId || 0}`;
+      }
+      // Default to thumbnail for Synology images if URL type is unclear
+      return `thumbnail_${synologyId}_${spaceId || 0}`;
+    }
+    // Fallback: use hash of identifier (for non-Synology images)
     return crypto.createHash('md5').update(imageIdentifier).digest('hex');
   }
 
   /**
-   * Get image from cache
+   * Get image from cache (returns file path for original files)
+   * @param imageIdentifier - URL or path identifier
+   * @param synologyId - Optional Synology photo ID for consistent caching
+   * @param spaceId - Optional space ID for consistent caching
    */
-  async get(imageIdentifier: string): Promise<string | null> {
+  async get(imageIdentifier: string, synologyId?: number, spaceId?: number | null): Promise<string | null> {
     if (!this.cache || !this.cacheDir) {
       return null;
     }
 
     try {
-      const key = this.getCacheKey(imageIdentifier);
+      const key = this.getCacheKey(imageIdentifier, synologyId, spaceId);
       const cachedMeta = this.cache.get(key);
 
       if (cachedMeta) {
-        const filePath = path.join(this.cacheDir, key);
+        // Try to find cached file with any extension
+        const extensions = ['.jpg', '.jpeg', '.png', '.heic', '.webp'];
+        for (const ext of extensions) {
+          const filePath = path.join(this.cacheDir, `${key}${ext}`);
+          try {
+            await fsPromises.access(filePath);
+            Log.debug(`Cache hit for ${imageIdentifier}`);
+            return filePath;
+          } catch {
+            // Try next extension
+          }
+        }
+        this.cache.del(key);
+        Log.debug(`Cache file missing for ${imageIdentifier}`);
+        return null;
+      }
+
+      // Check disk cache without metadata
+      const extensions = ['.jpg', '.jpeg', '.png', '.heic', '.webp'];
+      for (const ext of extensions) {
+        const filePath = path.join(this.cacheDir, `${key}${ext}`);
         try {
-          const data = await fsPromises.readFile(filePath, 'utf8');
-          Log.debug(`Cache hit for ${imageIdentifier}`);
-          return data;
+          await fsPromises.access(filePath);
+          this.cache.set(key, true);
+          Log.debug(`Disk cache hit for ${imageIdentifier}`);
+          return filePath;
         } catch {
-          this.cache.del(key);
-          Log.debug(`Cache file missing for ${imageIdentifier}`);
-          return null;
+          // Try next extension
         }
       }
 
-      const filePath = path.join(this.cacheDir, key);
-      try {
-        await fsPromises.access(filePath);
-        const data = await fsPromises.readFile(filePath, 'utf8');
-        this.cache.set(key, true);
-        Log.debug(`Disk cache hit for ${imageIdentifier}`);
-        return data;
-      } catch {
-        Log.debug(`Cache miss for ${imageIdentifier}`);
-        return null;
-      }
+      Log.debug(`Cache miss for ${imageIdentifier}`);
+      return null;
     } catch (error) {
       Log.error(`Error getting from cache: ${(error as Error).message}`);
       return null;
@@ -243,22 +283,59 @@ class ImageCache {
   }
 
   /**
-   * Store image in cache
+   * Get cached file path (for backward compatibility with base64 data URLs)
+   * Returns null if file doesn't exist, file path if it does
+   * @param imageIdentifier - URL or path identifier
+   * @param synologyId - Optional Synology photo ID for consistent caching
+   * @param spaceId - Optional space ID for consistent caching
    */
-  async set(imageIdentifier: string, imageData: string): Promise<boolean> {
+  async getFilePath(imageIdentifier: string, synologyId?: number, spaceId?: number | null): Promise<string | null> {
+    return this.get(imageIdentifier, synologyId, spaceId);
+  }
+
+  /**
+   * Store image in cache (original file as Buffer)
+   * Returns the file path if successful, null otherwise
+   * @param imageIdentifier - URL or path identifier
+   * @param imageData - Image data as string or Buffer
+   * @param fileExtension - File extension (default: .jpg)
+   * @param synologyId - Optional Synology photo ID for consistent caching
+   * @param spaceId - Optional space ID for consistent caching
+   */
+  async set(
+    imageIdentifier: string,
+    imageData: string | Buffer,
+    fileExtension = '.jpg',
+    synologyId?: number,
+    spaceId?: number | null
+  ): Promise<string | null> {
     if (!this.cache || !this.cacheDir) {
-      return false;
+      return null;
     }
 
     try {
-      const key = this.getCacheKey(imageIdentifier);
-      const filePath = path.join(this.cacheDir, key);
+      const key = this.getCacheKey(imageIdentifier, synologyId, spaceId);
+      const filePath = path.join(this.cacheDir, `${key}${fileExtension}`);
 
       this.cache.set(key, true);
 
-      const dataSize = Buffer.byteLength(imageData, 'utf8');
-      await fsPromises.writeFile(filePath, imageData, 'utf8');
+      let buffer: Buffer;
+      if (typeof imageData === 'string') {
+        // If it's a base64 data URL, extract the buffer
+        if (imageData.startsWith('data:')) {
+          const base64Data = imageData.split(',')[1];
+          buffer = Buffer.from(base64Data, 'base64');
+        } else {
+          // Plain base64 string
+          buffer = Buffer.from(imageData, 'base64');
+        }
+      } else {
+        buffer = imageData;
+      }
 
+      await fsPromises.writeFile(filePath, buffer);
+
+      const dataSize = buffer.length;
       this.currentCacheSize += dataSize;
 
       if (this.currentCacheSize > this.maxCacheSize) {
@@ -270,10 +347,10 @@ class ImageCache {
       Log.debug(
         `Cached image ${imageIdentifier} (${(dataSize / 1024 / 1024).toFixed(2)}MB)`
       );
-      return true;
+      return filePath;
     } catch (error) {
       Log.error(`Error setting cache: ${(error as Error).message}`);
-      return false;
+      return null;
     }
   }
 
@@ -317,7 +394,11 @@ class ImageCache {
       const image = this.preloadQueue.shift();
       if (!image) continue;
 
-      const key = this.getCacheKey(image.url || image.path);
+      // Use consistent cache key based on synologyId and spaceId if available
+      const imageIdentifier = image.url || image.path;
+      const synologyId = (image as PhotoItem & { synologyId?: number }).synologyId;
+      const spaceId = (image as PhotoItem & { spaceId?: number | null }).spaceId;
+      const key = this.getCacheKey(imageIdentifier, synologyId, spaceId);
       const cachedMeta = this.cache?.get(key);
 
       if (cachedMeta) {
@@ -332,7 +413,17 @@ class ImageCache {
             downloadCallback(image, async (imageData) => {
               clearTimeout(timeout);
               if (imageData) {
-                await this.set(image.url || image.path, imageData);
+                // Determine file extension from URL or path
+                let fileExtension = '.jpg';
+                const imageUrl = image.url || image.path;
+                if (imageUrl.includes('.heic') || imageUrl.includes('.HEIC')) {
+                  fileExtension = '.heic';
+                } else if (imageUrl.includes('.png')) {
+                  fileExtension = '.png';
+                } else if (imageUrl.includes('.webp')) {
+                  fileExtension = '.webp';
+                }
+                await this.set(imageUrl, imageData, fileExtension, synologyId, spaceId);
                 Log.debug(`Preloaded and cached: ${image.path}`);
               }
               resolve();

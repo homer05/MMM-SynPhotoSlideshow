@@ -76,6 +76,9 @@ const moduleDefinition: Partial<ModuleInstance> = {
     imageCacheMaxSize: 500,
     imageCachePreloadCount: 10,
     imageCachePreloadDelay: 500,
+    imageCachePath: undefined, // Default: .image-cache im Modul-Verzeichnis
+    backgroundDownloadEnabled: false,
+    backgroundDownloadInterval: 60 * 60 * 1000, // 1 Stunde
     enableMemoryMonitor: true,
     memoryMonitorInterval: 60000,
     memoryThreshold: 0.85,

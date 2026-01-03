@@ -7,6 +7,10 @@ export interface PhotoItem {
   url?: string;
   created: number;
   modified: number;
+  synologyId?: number;
+  spaceId?: number | null;
+  filePath?: string; // Full file path on Synology (for File Station API)
+  personId?: number; // Person ID for person albums (used for alternative download method)
 }
 
 export interface ModuleConfig {
@@ -26,6 +30,9 @@ export interface ModuleConfig {
   imageCacheMaxSize: number;
   imageCachePreloadCount: number;
   imageCachePreloadDelay: number;
+  imageCachePath?: string;
+  backgroundDownloadEnabled?: boolean;
+  backgroundDownloadInterval?: number;
   enableMemoryMonitor: boolean;
   memoryMonitorInterval: number;
   memoryThreshold: number;
@@ -72,4 +79,16 @@ export interface ImageInfo {
   data: string;
   index: number;
   total: number;
+  metadata?: {
+    captureDate?: string; // ISO 8601 format
+    captureTimestamp?: number; // Unix timestamp
+    latitude?: number;
+    longitude?: number;
+    location?: string; // Formatted location string
+    camera?: string;
+    iso?: number;
+    aperture?: string;
+    shutterSpeed?: string;
+    focalLength?: string;
+  };
 }

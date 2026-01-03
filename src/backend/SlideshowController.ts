@@ -14,6 +14,7 @@ import SynologyManager from './SynologyManager';
 import ImageProcessor from './ImageProcessor';
 import ImageCache from './ImageCache';
 import MemoryMonitor from './MemoryMonitor';
+import BackgroundDownloader from './BackgroundDownloader';
 import type { ImageInfo, ModuleConfig } from '../types';
 
 export type NotificationCallback = (
@@ -36,6 +37,8 @@ export default class SlideshowController {
   private imageProcessor: ImageProcessor | null = null;
 
   private memoryMonitor: MemoryMonitor | null = null;
+
+  private backgroundDownloader: BackgroundDownloader | null = null;
 
   private config: ModuleConfig | null = null;
 
@@ -81,6 +84,17 @@ export default class SlideshowController {
     // Initialize image processor
     this.imageProcessor = new ImageProcessor(config, this.imageCache);
 
+    // Initialize background downloader if enabled
+    if (config.backgroundDownloadEnabled) {
+      this.backgroundDownloader = new BackgroundDownloader(
+        config,
+        this.imageCache,
+        this.imageProcessor,
+        this.synologyManager
+      );
+      this.backgroundDownloader.start();
+    }
+
     // Start slideshow after a short delay
     setTimeout(() => {
       void this.gatherImageList(config, true).then(() => {
@@ -121,7 +135,9 @@ export default class SlideshowController {
           image.path,
           callback,
           image.url,
-          this.synologyManager.getClient()
+          this.synologyManager.getClient(),
+          image.synologyId,
+          image.spaceId
         );
       });
     }
@@ -188,14 +204,32 @@ export default class SlideshowController {
 
     this.imageProcessor?.readFile(
       image.path,
-      (data) => {
+      (data, metadata) => {
         const returnPayload: ImageInfo = {
           identifier: this.config?.identifier || '',
           path: image.path,
           data: data || '',
           index: this.imageListManager.index,
-          total: this.imageListManager.getList().length
+          total: this.imageListManager.getList().length,
+          metadata: metadata
         };
+        
+        // Debug output for metadata
+        if (metadata) {
+          Log.debug(`Image metadata for "${image.path}":`);
+          if (metadata.captureDate) {
+            Log.debug(`  Capture Date: ${metadata.captureDate}`);
+          }
+          if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
+            Log.debug(`  Location: ${metadata.location} (${metadata.latitude}, ${metadata.longitude})`);
+          }
+          if (metadata.camera) {
+            Log.debug(`  Camera: ${metadata.camera}`);
+          }
+        } else {
+          Log.debug(`No metadata available for "${image.path}"`);
+        }
+        
         Log.debug(`Sending DISPLAY_IMAGE notification for "${image.path}"`);
         this.notificationCallback(
           'BACKGROUNDSLIDESHOW_DISPLAY_IMAGE',
@@ -203,7 +237,9 @@ export default class SlideshowController {
         );
       },
       imageUrl,
-      synologyClient
+      synologyClient,
+      image.synologyId,
+      image.spaceId
     );
 
     const slideshowSpeed = this.config?.slideshowSpeed || 10000;
