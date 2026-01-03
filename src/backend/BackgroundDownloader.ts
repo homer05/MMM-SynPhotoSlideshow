@@ -57,6 +57,10 @@ class BackgroundDownloader {
     this.synologyManager = synologyManager;
     this.timerManager = new TimerManager();
     this.exifExtractor = new ExifExtractor();
+    // Initialize metadata file path (outside cache directory)
+    if (config.imageCachePath) {
+      this.exifExtractor.initializeMetadataFile(config.imageCachePath);
+    }
   }
 
   /**
@@ -263,6 +267,10 @@ class BackgroundDownloader {
                 }
                 if (metadata.camera) {
                   Log.debug(`  Camera: ${metadata.camera}`);
+                }
+                // Save to centralized metadata database (if new photo)
+                if (image.synologyId !== undefined) {
+                  await this.exifExtractor.savePhotoMetadata(image.synologyId, image.spaceId ?? null, metadata);
                 }
               } else {
                 Log.debug(`No metadata extracted from ${cachedPath}`);

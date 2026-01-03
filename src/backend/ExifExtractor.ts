@@ -32,8 +32,21 @@ interface SynologyClient {
   ) => Promise<Record<string, unknown> | null>;
 }
 
+interface PhotoMetadataEntry {
+  location?: string;
+  captureDate?: string;
+  synologyId: number;
+  spaceId: number | null;
+}
+
+interface PhotoMetadataDatabase {
+  [key: string]: PhotoMetadataEntry; // Key: `${synologyId}_${spaceId || 0}`
+}
+
 class ExifExtractor {
   private synologyClient: SynologyClient | null = null;
+
+  private metadataFilePath: string | null = null;
 
   /**
    * Set Synology client for API-based EXIF extraction
@@ -364,6 +377,109 @@ class ExifExtractor {
     } catch {
       // Metadata file doesn't exist or is invalid
       return null;
+    }
+  }
+
+  /**
+   * Initialize metadata file path (outside cache directory)
+   * @param cacheDirPath - Path to cache directory (not a file path)
+   */
+  initializeMetadataFile(cacheDirPath?: string): void {
+    if (cacheDirPath) {
+      // Store metadata file in parent directory of cache (outside cache)
+      // cacheDirPath is the cache directory, so we go up one level to module root
+      const moduleDir = path.dirname(cacheDirPath);
+      this.metadataFilePath = path.join(moduleDir, 'photo_metadata.json');
+    } else {
+      // Default location: module root
+      this.metadataFilePath = path.join(__dirname, '..', '..', 'photo_metadata.json');
+    }
+    Log.debug(`Metadata file path: ${this.metadataFilePath}`);
+  }
+
+  /**
+   * Load centralized metadata database
+   */
+  private async loadMetadataDatabase(): Promise<PhotoMetadataDatabase> {
+    if (!this.metadataFilePath) {
+      return {};
+    }
+
+    try {
+      const data = await fsPromises.readFile(this.metadataFilePath, 'utf-8');
+      return JSON.parse(data) as PhotoMetadataDatabase;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // File doesn't exist yet, return empty database
+        return {};
+      }
+      Log.warn(`Failed to load metadata database: ${(error as Error).message}`);
+      return {};
+    }
+  }
+
+  /**
+   * Save centralized metadata database
+   */
+  private async saveMetadataDatabase(database: PhotoMetadataDatabase): Promise<void> {
+    if (!this.metadataFilePath) {
+      return;
+    }
+
+    try {
+      await fsPromises.writeFile(
+        this.metadataFilePath,
+        JSON.stringify(database, null, 2),
+        'utf-8'
+      );
+      Log.debug(`Saved metadata database to ${this.metadataFilePath}`);
+    } catch (error) {
+      Log.warn(`Failed to save metadata database: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Save photo metadata to centralized database (if not already present)
+   */
+  async savePhotoMetadata(
+    synologyId: number,
+    spaceId: number | null,
+    metadata: ExifMetadata
+  ): Promise<void> {
+    if (!this.metadataFilePath) {
+      Log.debug('Metadata file path not initialized, skipping centralized save');
+      return;
+    }
+
+    // Only save location and captureDate
+    if (!metadata.location && !metadata.captureDate) {
+      Log.debug(`No location or captureDate to save for photo ${synologyId}`);
+      return;
+    }
+
+    try {
+      const database = await this.loadMetadataDatabase();
+      const key = `${synologyId}_${spaceId || 0}`;
+
+      // Check if photo already exists in database
+      if (database[key]) {
+        Log.debug(`Photo ${synologyId} already in metadata database, skipping`);
+        return;
+      }
+
+      // Add new entry
+      const entry: PhotoMetadataEntry = {
+        synologyId,
+        spaceId,
+        location: metadata.location,
+        captureDate: metadata.captureDate
+      };
+
+      database[key] = entry;
+      await this.saveMetadataDatabase(database);
+      Log.debug(`Saved metadata for photo ${synologyId} to centralized database`);
+    } catch (error) {
+      Log.warn(`Failed to save photo metadata: ${(error as Error).message}`);
     }
   }
 
