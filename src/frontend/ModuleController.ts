@@ -493,6 +493,17 @@ export default class ModuleController {
         oldInfoDiv.remove();
       }
       
+      // Remove old map if it exists
+      const oldMap = transitionDiv.querySelector('.map-container');
+      if (oldMap) {
+        oldMap.remove();
+      }
+      
+      // Create map if location string is available from photo_metadata.json
+      if (imageinfo.metadata?.location) {
+        this.uiBuilder.createMapDiv(transitionDiv, imageinfo.metadata.location);
+      }
+      
       // Create new info div for this image
       this.imageInfoDiv = this.uiBuilder.createImageInfoDiv(transitionDiv);
       

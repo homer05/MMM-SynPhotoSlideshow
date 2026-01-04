@@ -70,6 +70,7 @@ export interface ModuleConfig {
   frameHeight: string;
   framePosition: string;
   frameBackgroundColor: string;
+  mapZoom?: number; // Zoom level for location map (1-19, default: 13)
   logLevel?: 'error' | 'warn' | 'info' | 'debug';
 }
 

@@ -47,6 +47,99 @@ class UIBuilder {
   }
 
   /**
+   * Parse location string from photo_metadata.json
+   * Format: "35.306061, 25.394467" -> { lat: 35.306061, lon: 25.394467 }
+   */
+  private parseLocation(location: string): { lat: number; lon: number } | null {
+    try {
+      const parts = location.split(',').map(part => part.trim());
+      if (parts.length !== 2) {
+        return null;
+      }
+      const lat = Number.parseFloat(parts[0]);
+      const lon = Number.parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon)) {
+        return null;
+      }
+      return { lat, lon };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Create map div for geolocation display
+   * Uses location string from photo_metadata.json
+   * Uses Leaflet with OpenStreetMap tiles
+   */
+  createMapDiv(wrapper: HTMLElement, location: string): HTMLDivElement | null {
+    // Parse location string from photo_metadata.json
+    const coords = this.parseLocation(location);
+    if (!coords) {
+      return null;
+    }
+
+    // Check if Leaflet is available
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (window as any).L === 'undefined') {
+      Log.warn('[MMM-SynPhotoSlideshow] Leaflet library not loaded, map cannot be displayed');
+      return null;
+    }
+
+    const mapContainer = document.createElement('div');
+    mapContainer.className = `map-container ${this.config.imageInfoLocation}`;
+    const mapId = `map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    mapContainer.id = mapId;
+    
+    // Append container to DOM first
+    wrapper.appendChild(mapContainer);
+    
+    // Initialize Leaflet map after container is in DOM
+    // Use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const L = (window as any).L;
+        const map = L.map(mapId, {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          touchZoom: false,
+          doubleClickZoom: false,
+          scrollWheelZoom: false,
+          boxZoom: false,
+          keyboard: false
+        }).setView([coords.lat, coords.lon], this.config.mapZoom || 13);
+
+        // Add OpenStreetMap tile layer (German server for German labels)
+        L.tileLayer('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add marker
+        L.marker([coords.lat, coords.lon], {
+          icon: L.icon({
+            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34]
+          })
+        }).addTo(map);
+
+        // Trigger map resize to ensure proper rendering
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 50);
+      } catch (error) {
+        Log.warn(`[MMM-SynPhotoSlideshow] Failed to create map: ${(error as Error).message}`);
+      }
+    }, 10);
+    
+    return mapContainer;
+  }
+
+  /**
    * Create image info div
    */
   createImageInfoDiv(wrapper: HTMLElement): HTMLDivElement {

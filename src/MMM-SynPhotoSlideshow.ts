@@ -91,6 +91,7 @@ const moduleDefinition: Partial<ModuleInstance> = {
     showImageInfo: false,
     imageInfo: 'name, date, imagecount',
     imageInfoLocation: 'bottomRight',
+    mapZoom: 13, // Default zoom level for location map
     transitionSpeed: '2s',
     showProgressBar: false,
     backgroundSize: 'contain',
@@ -163,11 +164,18 @@ const moduleDefinition: Partial<ModuleInstance> = {
   },
 
   getScripts(this: ModuleInstance): string[] {
-    return [`modules/${this.name}/node_modules/exif-js/exif.js`, 'moment.js'];
+    return [
+      `modules/${this.name}/node_modules/exif-js/exif.js`,
+      'moment.js',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    ];
   },
 
   getStyles(): string[] {
-    return ['SynPhotoSlideshow.css'];
+    return [
+      'SynPhotoSlideshow.css',
+      'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+    ];
   },
 
   getTranslations(): Record<string, string> {
