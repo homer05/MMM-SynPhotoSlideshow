@@ -15,7 +15,7 @@ class ConfigValidator {
     config.sortImagesBy = config.sortImagesBy.toLowerCase();
 
     // Validate imageinfo property
-    const imageInfoRegex = /\bname\b|\bdate\b/giu;
+    const imageInfoRegex = /\bname\b|\bdate\b|\bcapturedate\b|\bfulladdress\b|\bshortaddress\b|\baddress\b|\bimagecount\b/giu;
     if (
       config.showImageInfo &&
       !imageInfoRegex.test(config.imageInfo as string)

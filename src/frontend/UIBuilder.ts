@@ -133,9 +133,32 @@ class UIBuilder {
     imageinfo: ImageInfo,
     imageDate: string
   ): string | null {
-    switch (prop) {
+    switch (prop.toLowerCase()) {
       case 'date':
-        return this.getDateProperty(imageDate);
+        // Nur aus metadata (photo_metadata.json), kein EXIF mehr
+        if (imageinfo.metadata?.captureDate) {
+          return this.formatCaptureDate(imageinfo.metadata.captureDate);
+        }
+        return null;
+
+      case 'capturedate':
+        // Nur aus metadata, nicht aus EXIF
+        if (imageinfo.metadata?.captureDate) {
+          return this.formatCaptureDate(imageinfo.metadata.captureDate);
+        }
+        return null;
+
+      case 'fulladdress':
+        return imageinfo.metadata?.FullAddress || null;
+
+      case 'shortaddress':
+        return imageinfo.metadata?.ShortAddress || null;
+
+      case 'address':
+        // Priorität: FullAddress > ShortAddress
+        return imageinfo.metadata?.FullAddress || 
+               imageinfo.metadata?.ShortAddress || 
+               null;
 
       case 'name':
         return this.getNameProperty(imageinfo.path);
@@ -159,6 +182,42 @@ class UIBuilder {
       return imageDate;
     }
     return null;
+  }
+
+  /**
+   * Format capture date from metadata (ISO 8601 format, UTC)
+   * Converts UTC to CET (Central European Time)
+   */
+  private formatCaptureDate(captureDate: string): string | null {
+    if (!captureDate) {
+      return null;
+    }
+
+    try {
+      // Parse UTC date from photo_metadata.json
+      const dateUTC = new Date(captureDate);
+      if (isNaN(dateUTC.getTime())) {
+        return null;
+      }
+
+      // Convert UTC to CET (UTC+1 in winter, UTC+2 in summer)
+      // CET is UTC+1, CEST (Central European Summer Time) is UTC+2
+      // JavaScript Date automatically handles timezone conversion when using toLocaleString
+      // We'll use Europe/Berlin timezone which automatically handles CET/CEST
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Berlin' // CET/CEST timezone
+      };
+
+      return dateUTC.toLocaleDateString('de-DE', options);
+    } catch {
+      return null;
+    }
   }
 
   /**
