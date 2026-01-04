@@ -688,14 +688,39 @@ class ExifExtractor {
 
     try {
       // Set User-Agent as required by Nominatim policy
+      Log.debug(`Calling Nominatim API: ${url}`);
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'MMM-SynPhotoSlideshow/2.0.0 (MagicMirror Module)',
-          'Referer': 'https://github.com/homer05/MMM-SynPhotoSlideshow' // Required by Nominatim policy
+          'Referer': 'https://github.com/homer05/MMM-SynPhotoSlideshow', // Required by Nominatim policy
+          'Accept': 'application/json'
         },
-        timeout: 10000
+        timeout: 10000,
+        validateStatus: (status) => status < 500 // Don't throw on 4xx errors, we'll handle them
       });
+      
+      // Check for HTTP errors (4xx)
+      if (response.status >= 400 && response.status < 500) {
+        Log.warn(`Nominatim API returned HTTP ${response.status} for ${lat}, ${lon}: ${JSON.stringify(response.data)}`);
+        this.lastGeocodingRequestTime = Date.now();
+        return null;
+      }
 
+      // Log response status for debugging
+      Log.debug(`Nominatim API response status: ${response.status}`);
+      
+      if (!response.data) {
+        Log.warn(`Nominatim API returned empty response for ${lat}, ${lon}`);
+        this.lastGeocodingRequestTime = Date.now();
+        return null;
+      }
+      
+      if (response.data.error) {
+        Log.warn(`Nominatim API error for ${lat}, ${lon}: ${JSON.stringify(response.data.error)}`);
+        this.lastGeocodingRequestTime = Date.now();
+        return null;
+      }
+      
       if (response.data && response.data.display_name) {
         this.lastGeocodingRequestTime = Date.now();
         
@@ -751,24 +776,57 @@ class ExifExtractor {
       let errorMessage = 'Unknown error';
       let httpStatus: number | undefined;
       let responseData: unknown;
+      let isTimeout = false;
+      let isNetworkError = false;
       
       if (error && typeof error === 'object') {
         // Check if it's an axios error
+        if ('code' in error) {
+          const code = String((error as { code: unknown }).code);
+          if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+            isTimeout = true;
+            errorMessage = `Timeout after 10 seconds`;
+          } else if (code === 'ECONNREFUSED' || code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+            isNetworkError = true;
+            errorMessage = `Network error: ${code}`;
+          } else {
+            errorMessage = `Error code: ${code}`;
+          }
+        }
+        
         if ('response' in error) {
-          const axiosError = error as { response?: { status?: number; data?: unknown; statusText?: string } };
+          const axiosError = error as { 
+            response?: { 
+              status?: number; 
+              data?: unknown; 
+              statusText?: string;
+              headers?: Record<string, unknown>;
+            };
+            request?: unknown;
+          };
           if (axiosError.response) {
             httpStatus = axiosError.response.status;
             responseData = axiosError.response.data;
-            errorMessage = `HTTP ${httpStatus} ${axiosError.response.statusText || ''}`.trim();
-          } else if ('request' in error) {
+            const statusText = axiosError.response.statusText || '';
+            errorMessage = `HTTP ${httpStatus}${statusText ? ` ${statusText}` : ''}`;
+            
+            // Check for rate limiting
+            if (httpStatus === 429) {
+              errorMessage = `Rate limit exceeded (HTTP 429)`;
+              const retryAfter = axiosError.response.headers?.['retry-after'] || axiosError.response.headers?.['Retry-After'];
+              if (retryAfter) {
+                Log.debug(`Nominatim suggests retrying after ${retryAfter} seconds`);
+              }
+            }
+          } else if (axiosError.request) {
+            isNetworkError = true;
             errorMessage = 'Network error (no response from server)';
-          } else {
-            errorMessage = 'Request error';
           }
         } else if ('message' in error) {
-          errorMessage = String((error as { message: unknown }).message);
-        } else {
-          errorMessage = String(error);
+          const msg = String((error as { message: unknown }).message);
+          if (msg && msg !== 'Error') {
+            errorMessage = msg;
+          }
         }
       } else if (error) {
         errorMessage = String(error);
@@ -777,10 +835,19 @@ class ExifExtractor {
       // Log error with details
       if (httpStatus !== undefined) {
         Log.warn(
-          `Failed to reverse geocode ${lat}, ${lon}: ${errorMessage} - ${JSON.stringify(responseData)}`
+          `Failed to reverse geocode ${lat}, ${lon}: ${errorMessage}${responseData ? ` - Response: ${JSON.stringify(responseData)}` : ''}`
         );
+      } else if (isTimeout) {
+        Log.warn(`Failed to reverse geocode ${lat}, ${lon}: ${errorMessage} (request timed out)`);
+      } else if (isNetworkError) {
+        Log.warn(`Failed to reverse geocode ${lat}, ${lon}: ${errorMessage} (network issue)`);
       } else {
         Log.warn(`Failed to reverse geocode ${lat}, ${lon}: ${errorMessage}`);
+      }
+      
+      // Log full error object in debug mode for troubleshooting
+      if (error && typeof error === 'object') {
+        Log.debug(`Full error object: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`);
       }
       
       // Log URL for debugging
