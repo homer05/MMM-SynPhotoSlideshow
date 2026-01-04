@@ -154,59 +154,69 @@ class ImageProcessor {
             const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext;
             const base64 = buffer.toString('base64');
             
-            // ALWAYS load metadata from original file, never from thumbnail
-            // Original files are cached with key: original_${synologyId}_${spaceId}
+            // Try to load metadata from centralized database first (no original file needed)
             let metadata: ExifMetadata | undefined;
-            if (synologyId !== undefined && this.imageCache) {
+            if (synologyId !== undefined) {
               try {
-                const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
-                Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
-                let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
-                
-                // If original not in cache, try to download it
-                if (!originalCachedPath && synologyClient.downloadOriginalPhoto) {
-                  Log.debug(`Original file not in cache, attempting to download...`);
-                  try {
-                    const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
-                    if (originalBuffer) {
-                      // Determine file extension from buffer or default
-                      let fileExtension = '.heic'; // Default for Synology Photos
-                      // Try to detect from buffer or use heic as default
-                      originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, fileExtension, synologyId, spaceId);
-                      if (originalCachedPath) {
-                        Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
-                      }
-                    }
-                  } catch (error) {
-                    Log.debug(`Failed to download original file: ${(error as Error).message}`);
-                  }
-                }
-                
-                if (originalCachedPath) {
-                  Log.debug(`Using original file for metadata: ${originalCachedPath}`);
-                  // Try to load metadata from original file
-                  metadata = (await this.exifExtractor.loadMetadata(originalCachedPath)) || undefined;
-                  if (metadata) {
-                    Log.debug(`Loaded metadata from original file cache for ${originalCachedPath}`);
-                  } else {
-                    // Try to extract metadata from original file
-                    Log.debug(`No cached metadata found for original, extracting from ${originalCachedPath}...`);
-                    metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
-                    if (metadata) {
-                      Log.debug(`Successfully extracted metadata from original file`);
-                      // Save to centralized metadata database (if new photo)
-                      if (synologyId !== undefined) {
-                        await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
-                      }
-                    } else {
-                      Log.debug(`Failed to extract metadata from original file`);
-                    }
+                // Check if metadata exists in centralized database
+                metadata = (await this.exifExtractor.loadMetadataFromDatabase(synologyId, spaceId ?? null)) || undefined;
+                if (metadata) {
+                  Log.debug(`Loaded metadata from centralized database for photo ${synologyId}`);
+                  
+                  // Check if address data is missing and trigger geocoding if needed (with rate limiting)
+                  if (metadata.location && !metadata.FullAddress) {
+                    Log.debug(`Photo ${synologyId} has location but no address, triggering geocoding (will respect 5-second rate limit)`);
+                    void this.exifExtractor.checkAndLogGeocodingUrl(synologyId, spaceId ?? null, metadata.location);
                   }
                 } else {
-                  Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                  // No metadata in database, need to download original file to extract metadata
+                  Log.debug(`No metadata in database for photo ${synologyId}, need to download original file`);
+                  
+                  if (this.imageCache && synologyClient.downloadOriginalPhoto) {
+                    try {
+                      const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
+                      Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
+                      let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
+                      
+                      // If original not in cache, try to download it
+                      if (!originalCachedPath) {
+                        Log.debug(`Original file not in cache, attempting to download...`);
+                        try {
+                          const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
+                          if (originalBuffer) {
+                            // Determine file extension from buffer or default
+                            let fileExtension = '.heic'; // Default for Synology Photos
+                            originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, fileExtension, synologyId, spaceId);
+                            if (originalCachedPath) {
+                              Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
+                            }
+                          }
+                        } catch (error) {
+                          Log.debug(`Failed to download original file: ${(error as Error).message}`);
+                        }
+                      }
+                      
+                      if (originalCachedPath) {
+                        Log.debug(`Extracting metadata from original file: ${originalCachedPath}`);
+                        // Extract metadata from original file
+                        metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
+                        if (metadata) {
+                          Log.debug(`Successfully extracted metadata from original file`);
+                          // Save to centralized metadata database
+                          await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
+                        } else {
+                          Log.debug(`Failed to extract metadata from original file`);
+                        }
+                      } else {
+                        Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                      }
+                    } catch (error) {
+                      Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+                    }
+                  }
                 }
               } catch (error) {
-                Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+                Log.debug(`Failed to load metadata from database: ${(error as Error).message}`);
               }
             } else {
               if (synologyId === undefined) {
@@ -251,56 +261,68 @@ class ImageProcessor {
           // Use consistent cache key based on synologyId and spaceId
           const cachedPath = await this.imageCache.set(imageUrl, imageBuffer, fileExtension, synologyId, spaceId);
           
-          // ALWAYS load metadata from original file, never from thumbnail
-          if (synologyId !== undefined && synologyClient.downloadOriginalPhoto) {
+          // Try to load metadata from centralized database first (no original file needed)
+          if (synologyId !== undefined) {
             try {
-              const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
-              Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
-              let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
-              
-              // If original not in cache, try to download it
-              if (!originalCachedPath) {
-                Log.debug(`Original file not in cache, attempting to download...`);
-                try {
-                  const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
-                  if (originalBuffer) {
-                    // Determine file extension from buffer or default
-                    let originalFileExtension = '.heic'; // Default for Synology Photos
-                    originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, originalFileExtension, synologyId, spaceId);
-                    if (originalCachedPath) {
-                      Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
-                    }
-                  }
-                } catch (error) {
-                  Log.debug(`Failed to download original file: ${(error as Error).message}`);
-                }
-              }
-              
-              if (originalCachedPath) {
-                Log.debug(`Using original file for metadata: ${originalCachedPath}`);
-                // Try to load metadata from original file
-                metadata = (await this.exifExtractor.loadMetadata(originalCachedPath)) || undefined;
-                if (metadata) {
-                  Log.debug(`Loaded metadata from original file cache for ${originalCachedPath}`);
-                } else {
-                  // Try to extract metadata from original file
-                  Log.debug(`No cached metadata found for original, extracting from ${originalCachedPath}...`);
-                  metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
-                  if (metadata) {
-                    Log.debug(`Successfully extracted metadata from original file`);
-                    // Save to centralized metadata database (if new photo)
-                    if (synologyId !== undefined) {
-                      await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
-                    }
-                  } else {
-                    Log.debug(`Failed to extract metadata from original file`);
-                  }
+              // Check if metadata exists in centralized database
+              metadata = (await this.exifExtractor.loadMetadataFromDatabase(synologyId, spaceId ?? null)) || undefined;
+              if (metadata) {
+                Log.debug(`Loaded metadata from centralized database for photo ${synologyId}`);
+                
+                // Check if address data is missing and trigger geocoding if needed (with rate limiting)
+                if (metadata.location && !metadata.FullAddress) {
+                  Log.debug(`Photo ${synologyId} has location but no address, triggering geocoding (will respect 5-second rate limit)`);
+                  void this.exifExtractor.checkAndLogGeocodingUrl(synologyId, spaceId ?? null, metadata.location);
                 }
               } else {
-                Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                // No metadata in database, need to download original file to extract metadata
+                Log.debug(`No metadata in database for photo ${synologyId}, need to download original file`);
+                
+                if (synologyClient.downloadOriginalPhoto) {
+                  try {
+                    const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
+                    Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
+                    let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
+                    
+                    // If original not in cache, try to download it
+                    if (!originalCachedPath) {
+                      Log.debug(`Original file not in cache, attempting to download...`);
+                      try {
+                        const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
+                        if (originalBuffer) {
+                          // Determine file extension from buffer or default
+                          let originalFileExtension = '.heic'; // Default for Synology Photos
+                          originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, originalFileExtension, synologyId, spaceId);
+                          if (originalCachedPath) {
+                            Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
+                          }
+                        }
+                      } catch (error) {
+                        Log.debug(`Failed to download original file: ${(error as Error).message}`);
+                      }
+                    }
+                    
+                    if (originalCachedPath) {
+                      Log.debug(`Extracting metadata from original file: ${originalCachedPath}`);
+                      // Extract metadata from original file
+                      metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
+                      if (metadata) {
+                        Log.debug(`Successfully extracted metadata from original file`);
+                        // Save to centralized metadata database
+                        await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
+                      } else {
+                        Log.debug(`Failed to extract metadata from original file`);
+                      }
+                    } else {
+                      Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                    }
+                  } catch (error) {
+                    Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+                  }
+                }
               }
             } catch (error) {
-              Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+              Log.debug(`Failed to load metadata from database: ${(error as Error).message}`);
             }
           }
         }

@@ -325,7 +325,40 @@ class ImageCache {
       const key = this.getCacheKey(imageIdentifier, synologyId, spaceId);
       const filePath = path.join(this.cacheDir, `${key}${fileExtension}`);
 
-      this.cache.set(key, true);
+      // Check if cache is at max keys limit and evict old entries if needed
+      // NodeCache has a maxKeys limit of 1000, so we need to remove old entries before adding new ones
+      if (this.cache) {
+        const currentKeys = this.cache.keys();
+        if (currentKeys.length >= 1000) {
+          Log.debug(`Cache at max keys limit (${currentKeys.length}/1000), evicting old entries...`);
+          // Remove oldest 100 entries to make room
+          const keysToRemove = currentKeys.slice(0, 100);
+          for (const oldKey of keysToRemove) {
+            this.cache.del(oldKey);
+          }
+          Log.debug(`Evicted ${keysToRemove.length} old cache entries, now ${this.cache.keys().length} entries remaining`);
+        }
+      }
+
+      // Try to set the key, catch error if maxKeys is still exceeded
+      try {
+        this.cache.set(key, true);
+      } catch (error) {
+        // If still failing, try to evict more entries
+        if ((error as Error).message.includes('max keys') || (error as Error).message.includes('maxKeys')) {
+          Log.warn(`Cache still at max keys after eviction, removing more entries...`);
+          const allKeys = this.cache.keys();
+          const keysToRemove = allKeys.slice(0, 200); // Remove 200 more entries
+          for (const oldKey of keysToRemove) {
+            this.cache.del(oldKey);
+          }
+          // Try again
+          this.cache.set(key, true);
+          Log.debug(`Successfully added cache key after additional eviction`);
+        } else {
+          throw error; // Re-throw if it's a different error
+        }
+      }
 
       let buffer: Buffer;
       if (typeof imageData === 'string') {

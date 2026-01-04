@@ -10,6 +10,7 @@ import sharp from 'sharp';
 import { exiftool } from 'exiftool-vendored';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import axios from 'axios';
 import Log from './Logger';
 
 export interface ExifMetadata {
@@ -18,6 +19,8 @@ export interface ExifMetadata {
   latitude?: number;
   longitude?: number;
   location?: string; // Formatted location string
+  FullAddress?: string; // Full address from Nominatim display_name
+  ShortAddress?: string; // Short address format: "City - Country"
   camera?: string;
   iso?: number;
   aperture?: string;
@@ -35,6 +38,9 @@ interface SynologyClient {
 interface PhotoMetadataEntry {
   location?: string;
   captureDate?: string;
+  address?: string; // Reverse geocoded address from Nominatim (deprecated, use FullAddress)
+  FullAddress?: string; // Full address from Nominatim display_name
+  ShortAddress?: string; // Short address format: "City - Country"
   synologyId: number;
   spaceId: number | null;
 }
@@ -47,6 +53,14 @@ class ExifExtractor {
   private synologyClient: SynologyClient | null = null;
 
   private metadataFilePath: string | null = null;
+
+  private lastGeocodingRequestTime: number = 0;
+
+  private readonly geocodingRateLimitMs: number = 5000; // 5 seconds between requests
+
+  private geocodingQueue: Array<() => Promise<void>> = [];
+
+  private isProcessingGeocodingQueue: boolean = false;
 
   /**
    * Set Synology client for API-based EXIF extraction
@@ -188,20 +202,7 @@ class ExifExtractor {
    */
   private async extractMetadataWithSharp(imagePath: string): Promise<ExifMetadata | null> {
     try {
-      Log.debug(`Extracting metadata with exiftool-vendored: ${path.basename(imagePath)}`);
       const tags = await exiftool.read(imagePath);
-      
-      // Debug: Output all metadata from exiftool
-      Log.debug(`=== EXIFTOOL METADATA FOR ${path.basename(imagePath)} ===`);
-      Log.debug(`Raw exiftool output (first 50 keys): ${JSON.stringify(Object.keys(tags).slice(0, 50))}`);
-      
-      // Output all metadata fields in debug mode
-      for (const [key, value] of Object.entries(tags)) {
-        if (value !== null && value !== undefined) {
-          Log.debug(`  ${key}: ${JSON.stringify(value)}`);
-        }
-      }
-      Log.debug(`=== END EXIFTOOL METADATA ===`);
       
       // Parse relevant fields into ExifMetadata format
       const result: ExifMetadata = {};
@@ -269,9 +270,7 @@ class ExifExtractor {
 
       // Only return result if we found useful data
       if (result.captureDate || result.latitude !== undefined) {
-        Log.debug(
-          `Extracted EXIF metadata from ${path.basename(imagePath)}: ${JSON.stringify(result)}`
-        );
+        Log.debug(`Extracted EXIF metadata from ${path.basename(imagePath)}`);
         return result;
       }
 
@@ -367,13 +366,36 @@ class ExifExtractor {
   }
 
   /**
-   * Load metadata from JSON file
+   * Load metadata from JSON file and enrich with address data from centralized database
    */
-  async loadMetadata(imagePath: string): Promise<ExifMetadata | null> {
+  async loadMetadata(imagePath: string, synologyId?: number, spaceId?: number | null): Promise<ExifMetadata | null> {
     try {
       const metadataPath = `${imagePath}.metadata.json`;
       const data = await fsPromises.readFile(metadataPath, 'utf-8');
-      return JSON.parse(data) as ExifMetadata;
+      const metadata = JSON.parse(data) as ExifMetadata;
+      
+      // Enrich with address data from centralized database if available
+      if (synologyId !== undefined && this.metadataFilePath) {
+        try {
+          const database = await this.loadMetadataDatabase();
+          const key = `${synologyId}_${spaceId || 0}`;
+          const entry = database[key];
+          
+          if (entry) {
+            // Add FullAddress and ShortAddress if available
+            if (entry.FullAddress) {
+              metadata.FullAddress = entry.FullAddress;
+            }
+            if (entry.ShortAddress) {
+              metadata.ShortAddress = entry.ShortAddress;
+            }
+          }
+        } catch (error) {
+          Log.debug(`Failed to load address data from centralized database: ${(error as Error).message}`);
+        }
+      }
+      
+      return metadata;
     } catch {
       // Metadata file doesn't exist or is invalid
       return null;
@@ -399,6 +421,7 @@ class ExifExtractor {
 
   /**
    * Load centralized metadata database
+   * Handles corrupted/truncated files gracefully
    */
   private async loadMetadataDatabase(): Promise<PhotoMetadataDatabase> {
     if (!this.metadataFilePath) {
@@ -407,7 +430,43 @@ class ExifExtractor {
 
     try {
       const data = await fsPromises.readFile(this.metadataFilePath, 'utf-8');
-      return JSON.parse(data) as PhotoMetadataDatabase;
+      
+      // Check if file is empty or only whitespace
+      if (!data.trim()) {
+        Log.warn(`Metadata database file is empty, returning empty database`);
+        return {};
+      }
+      
+      // Try to parse JSON
+      try {
+        return JSON.parse(data) as PhotoMetadataDatabase;
+      } catch (parseError) {
+        // File might be truncated or corrupted
+        Log.warn(`Failed to parse metadata database (file may be truncated): ${(parseError as Error).message}`);
+        
+        // Try to load backup if available
+        const backupPath = `${this.metadataFilePath}.backup`;
+        try {
+          const backupData = await fsPromises.readFile(backupPath, 'utf-8');
+          if (backupData.trim()) {
+            try {
+              const backupDb = JSON.parse(backupData) as PhotoMetadataDatabase;
+              Log.info(`Successfully loaded metadata database from backup`);
+              // Restore backup to main file
+              await this.saveMetadataDatabase(backupDb);
+              return backupDb;
+            } catch {
+              Log.warn(`Backup file is also corrupted`);
+            }
+          }
+        } catch {
+          // No backup available or backup is also corrupted
+        }
+        
+        // If all else fails, return empty database
+        Log.warn(`Returning empty database due to corruption`);
+        return {};
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         // File doesn't exist yet, return empty database
@@ -420,6 +479,7 @@ class ExifExtractor {
 
   /**
    * Save centralized metadata database
+   * Uses atomic write (temporary file + rename) to prevent corruption
    */
   private async saveMetadataDatabase(database: PhotoMetadataDatabase): Promise<void> {
     if (!this.metadataFilePath) {
@@ -427,14 +487,94 @@ class ExifExtractor {
     }
 
     try {
-      await fsPromises.writeFile(
-        this.metadataFilePath,
-        JSON.stringify(database, null, 2),
-        'utf-8'
-      );
+      // Create backup of existing file if it exists
+      try {
+        await fsPromises.access(this.metadataFilePath);
+        const backupPath = `${this.metadataFilePath}.backup`;
+        await fsPromises.copyFile(this.metadataFilePath, backupPath);
+      } catch {
+        // File doesn't exist yet or backup failed, continue anyway
+      }
+
+      // Write to temporary file first (atomic write)
+      const tempPath = `${this.metadataFilePath}.tmp`;
+      const jsonData = JSON.stringify(database, null, 2);
+      
+      await fsPromises.writeFile(tempPath, jsonData, 'utf-8');
+      
+      // Atomically replace the original file by renaming
+      await fsPromises.rename(tempPath, this.metadataFilePath);
+      
       Log.debug(`Saved metadata database to ${this.metadataFilePath}`);
     } catch (error) {
       Log.warn(`Failed to save metadata database: ${(error as Error).message}`);
+      
+      // Try to clean up temporary file if it exists
+      try {
+        const tempPath = `${this.metadataFilePath}.tmp`;
+        await fsPromises.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  }
+
+  /**
+   * Load metadata from centralized database only (without original file)
+   * Returns metadata if found, null otherwise
+   */
+  async loadMetadataFromDatabase(
+    synologyId: number,
+    spaceId: number | null
+  ): Promise<ExifMetadata | null> {
+    if (!this.metadataFilePath) {
+      return null;
+    }
+
+    try {
+      const database = await this.loadMetadataDatabase();
+      const key = `${synologyId}_${spaceId || 0}`;
+      const entry = database[key];
+
+      if (entry) {
+        // Convert database entry to ExifMetadata
+        const metadata: ExifMetadata = {};
+        
+        if (entry.location) {
+          // Parse location string to get lat/lon
+          const coords = this.parseLocation(entry.location);
+          if (coords) {
+            metadata.latitude = coords.lat;
+            metadata.longitude = coords.lon;
+            metadata.location = entry.location;
+          }
+        }
+        
+        if (entry.captureDate) {
+          metadata.captureDate = entry.captureDate;
+          // Convert to timestamp if needed
+          try {
+            metadata.captureTimestamp = new Date(entry.captureDate).getTime();
+          } catch {
+            // Ignore conversion errors
+          }
+        }
+        
+        // Add address data
+        if (entry.FullAddress) {
+          metadata.FullAddress = entry.FullAddress;
+        }
+        if (entry.ShortAddress) {
+          metadata.ShortAddress = entry.ShortAddress;
+        }
+        
+        return metadata;
+      }
+      
+      return null;
+    } catch (error) {
+      Log.debug(`Failed to load metadata from database: ${(error as Error).message}`);
+      return null;
     }
   }
 
@@ -462,8 +602,19 @@ class ExifExtractor {
       const key = `${synologyId}_${spaceId || 0}`;
 
       // Check if photo already exists in database
-      if (database[key]) {
-        Log.debug(`Photo ${synologyId} already in metadata database, skipping`);
+      const existingEntry = database[key];
+      if (existingEntry) {
+        Log.debug(`Photo ${synologyId} already in metadata database`);
+        
+        // If location exists but no FullAddress, try to geocode
+        if (existingEntry.location && !existingEntry.FullAddress) {
+          const coords = this.parseLocation(existingEntry.location);
+          if (coords) {
+            Log.debug(`Photo ${synologyId} has location but no address, geocoding ${coords.lat}, ${coords.lon}`);
+            // Enqueue geocoding request (thread-safe)
+            void this.enqueueGeocoding(key, coords.lat, coords.lon);
+          }
+        }
         return;
       }
 
@@ -478,9 +629,271 @@ class ExifExtractor {
       database[key] = entry;
       await this.saveMetadataDatabase(database);
       Log.debug(`Saved metadata for photo ${synologyId} to centralized database`);
+
+      // If location is available, try to geocode
+      if (metadata.location) {
+        const coords = this.parseLocation(metadata.location);
+        if (coords) {
+          Log.debug(`New photo ${synologyId} has location, geocoding ${coords.lat}, ${coords.lon}`);
+          // Enqueue geocoding request (thread-safe)
+          void this.enqueueGeocoding(key, coords.lat, coords.lon);
+        }
+      }
     } catch (error) {
       Log.warn(`Failed to save photo metadata: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Parse location string to extract latitude and longitude
+   * Format: "51.121669, 13.772767" -> { lat: 51.121669, lon: 13.772767 }
+   */
+  private parseLocation(location: string): { lat: number; lon: number } | null {
+    try {
+      const parts = location.split(',').map(part => part.trim());
+      if (parts.length !== 2) {
+        return null;
+      }
+      const lat = Number.parseFloat(parts[0]);
+      const lon = Number.parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon)) {
+        return null;
+      }
+      return { lat, lon };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Reverse geocode location to address using Nominatim API
+   * Respects rate limiting (max 1 request per 5 seconds)
+   * Attribution: Data © OpenStreetMap contributors, ODbL 1.0
+   * Returns object with FullAddress and ShortAddress
+   * Uses accept-language=en to get addresses in Latin characters (English)
+   */
+  private async reverseGeocode(lat: number, lon: number): Promise<{ FullAddress: string; ShortAddress: string } | null> {
+    // Build URL with accept-language=en to get addresses in Latin characters (English)
+    // This ensures readable addresses for European users instead of local scripts (e.g., Greek, Cyrillic)
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=en`;
+    
+    // Rate limiting: wait if last request was less than 5 seconds ago
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastGeocodingRequestTime;
+    if (timeSinceLastRequest < this.geocodingRateLimitMs) {
+      const waitTime = this.geocodingRateLimitMs - timeSinceLastRequest;
+      Log.debug(`Rate limiting: waiting ${waitTime}ms before next geocoding request`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    try {
+      // Set User-Agent as required by Nominatim policy
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'MMM-SynPhotoSlideshow/2.0.0 (MagicMirror Module)',
+          'Referer': 'https://github.com/homer05/MMM-SynPhotoSlideshow' // Required by Nominatim policy
+        },
+        timeout: 10000
+      });
+
+      if (response.data && response.data.display_name) {
+        this.lastGeocodingRequestTime = Date.now();
+        
+        // Extract display_name as FullAddress (exact copy, no modification)
+        const FullAddress = String(response.data.display_name).trim();
+        
+        // Extract ShortAddress from address object: "City/Region - Country"
+        let ShortAddress = '';
+        if (response.data.address) {
+          const addr = response.data.address;
+          // Try to find city/town/village/municipality/county (in order of preference)
+          const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+          const country = addr.country || '';
+          
+          if (city && country) {
+            ShortAddress = `${city} - ${country}`;
+          } else if (country) {
+            ShortAddress = country;
+          } else if (city) {
+            ShortAddress = city;
+          }
+        }
+        
+        // If ShortAddress couldn't be constructed from address object, use a shortened version of display_name
+        if (!ShortAddress && FullAddress) {
+          const parts = FullAddress.split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
+          if (parts.length >= 2) {
+            // Take last two parts (usually city/region and country)
+            // Make sure we don't truncate the country name
+            const lastPart = parts[parts.length - 1];
+            const secondLastPart = parts[parts.length - 2];
+            ShortAddress = `${secondLastPart} - ${lastPart}`;
+          } else if (parts.length === 1) {
+            ShortAddress = parts[0];
+          } else {
+            ShortAddress = FullAddress;
+          }
+        }
+        
+        // Ensure we have a valid ShortAddress
+        if (!ShortAddress) {
+          ShortAddress = FullAddress;
+        }
+        
+        Log.debug(`Reverse geocoded ${lat}, ${lon} -> FullAddress: "${FullAddress}", ShortAddress: "${ShortAddress}"`);
+        Log.debug(`Attribution: Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright`);
+        
+        return { FullAddress, ShortAddress };
+      }
+      return null;
+    } catch (error) {
+      // Enhanced error logging for better debugging
+      let errorMessage = 'Unknown error';
+      let httpStatus: number | undefined;
+      let responseData: unknown;
+      
+      if (error && typeof error === 'object') {
+        // Check if it's an axios error
+        if ('response' in error) {
+          const axiosError = error as { response?: { status?: number; data?: unknown; statusText?: string } };
+          if (axiosError.response) {
+            httpStatus = axiosError.response.status;
+            responseData = axiosError.response.data;
+            errorMessage = `HTTP ${httpStatus} ${axiosError.response.statusText || ''}`.trim();
+          } else if ('request' in error) {
+            errorMessage = 'Network error (no response from server)';
+          } else {
+            errorMessage = 'Request error';
+          }
+        } else if ('message' in error) {
+          errorMessage = String((error as { message: unknown }).message);
+        } else {
+          errorMessage = String(error);
+        }
+      } else if (error) {
+        errorMessage = String(error);
+      }
+      
+      // Log error with details
+      if (httpStatus !== undefined) {
+        Log.warn(
+          `Failed to reverse geocode ${lat}, ${lon}: ${errorMessage} - ${JSON.stringify(responseData)}`
+        );
+      } else {
+        Log.warn(`Failed to reverse geocode ${lat}, ${lon}: ${errorMessage}`);
+      }
+      
+      // Log URL for debugging
+      Log.debug(`Geocoding URL that failed: ${url}`);
+      
+      this.lastGeocodingRequestTime = Date.now(); // Still update to prevent rapid retries
+      return null;
+    }
+  }
+
+  /**
+   * Process geocoding queue (ensures thread-safe access)
+   */
+  private async processGeocodingQueue(): Promise<void> {
+    if (this.isProcessingGeocodingQueue) {
+      return;
+    }
+
+    this.isProcessingGeocodingQueue = true;
+
+    while (this.geocodingQueue.length > 0) {
+      const task = this.geocodingQueue.shift();
+      if (task) {
+        try {
+          await task();
+        } catch (error) {
+          Log.warn(`Error processing geocoding task: ${(error as Error).message}`);
+        }
+      }
+    }
+
+    this.isProcessingGeocodingQueue = false;
+  }
+
+  /**
+   * Update address for a photo in the metadata database (thread-safe)
+   */
+  private async updatePhotoAddress(
+    key: string,
+    FullAddress: string,
+    ShortAddress: string
+  ): Promise<void> {
+    if (!this.metadataFilePath) {
+      return;
+    }
+
+    // Use file locking by reading, updating, and writing atomically
+    try {
+      const database = await this.loadMetadataDatabase();
+      if (database[key]) {
+        database[key].FullAddress = FullAddress;
+        database[key].ShortAddress = ShortAddress;
+        await this.saveMetadataDatabase(database);
+        Log.debug(`Updated address for photo ${key} in metadata database: FullAddress="${FullAddress}", ShortAddress="${ShortAddress}"`);
+      }
+    } catch (error) {
+      Log.warn(`Failed to update photo address: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Check if photo needs geocoding and trigger it if needed
+   * Called when displaying an image to check if address is missing
+   */
+  async checkAndLogGeocodingUrl(
+    synologyId: number,
+    spaceId: number | null,
+    location: string
+  ): Promise<void> {
+    if (!this.metadataFilePath) {
+      return;
+    }
+
+    try {
+      const database = await this.loadMetadataDatabase();
+      const key = `${synologyId}_${spaceId || 0}`;
+      const entry = database[key];
+
+      // If photo exists in database but has no FullAddress, trigger geocoding
+      if (entry && entry.location && !entry.FullAddress) {
+        const coords = this.parseLocation(location);
+        if (coords) {
+          Log.debug(`Photo ${synologyId} has location "${location}" but no address, triggering geocoding`);
+          // Enqueue geocoding request (thread-safe)
+          void this.enqueueGeocoding(key, coords.lat, coords.lon);
+        }
+      }
+    } catch (error) {
+      Log.debug(`Failed to check geocoding: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Enqueue geocoding request (thread-safe queue processing)
+   */
+  private async enqueueGeocoding(
+    key: string,
+    lat: number,
+    lon: number
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      this.geocodingQueue.push(async () => {
+        const addressData = await this.reverseGeocode(lat, lon);
+        if (addressData) {
+          Log.debug(`Reverse geocoded address for photo ${key}: FullAddress="${addressData.FullAddress}", ShortAddress="${addressData.ShortAddress}"`);
+          await this.updatePhotoAddress(key, addressData.FullAddress, addressData.ShortAddress);
+        }
+        resolve();
+      });
+
+      // Start processing queue if not already processing
+      void this.processGeocodingQueue();
+    });
   }
 
   /**

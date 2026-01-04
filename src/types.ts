@@ -85,6 +85,8 @@ export interface ImageInfo {
     latitude?: number;
     longitude?: number;
     location?: string; // Formatted location string
+    FullAddress?: string; // Full address from Nominatim display_name
+    ShortAddress?: string; // Short address format: "City - Country"
     camera?: string;
     iso?: number;
     aperture?: string;
