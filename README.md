@@ -271,6 +271,97 @@ You can filter photos by tags assigned in Synology Photos. This is useful for di
 
 **Note:** Tag filtering works with both personal accounts (using credentials) and shared albums (using share tokens). When using personal account credentials, photos are fetched from both your personal space and any shared spaces you have access to. If a photo has multiple matching tags, it will only appear once in the slideshow.
 
+#### Filtering by AI-Generated Albums (Persons, Concepts, Geocoding)
+
+This fork supports filtering photos by Synology Photos AI-generated albums from personal space:
+
+- **Persons** (`synologyPersonIds`): Filter photos containing specific people (face recognition)
+- **Concepts** (`synologyConceptIds`): Filter photos by scenes/themes (e.g., "beach", "mountains", "food")
+- **Geocoding** (`synologyGeocodingIds`): Filter photos by location (e.g., "Paris", "New York")
+
+**Priority:** Personal space albums (persons/concepts/geocoding) > Tags > Regular albums
+
+**Example configuration:**
+
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {
+    synologyUrl: 'http://192.168.1.100:5000',
+    synologyAccount: 'your-username',
+    synologyPassword: 'your-password',
+    synologyPersonIds: [123, 456],        // Filter by person IDs
+    synologyConceptIds: [789],             // Filter by concept/theme IDs
+    synologyGeocodingIds: [202, 303],      // Filter by location IDs
+    synologyMaxPhotos: 1000,
+    slideshowSpeed: 60000
+  }
+}
+```
+
+**Environment variables:**
+
+```bash
+SYNOLOGY_PERSON_IDS=123,456
+SYNOLOGY_CONCEPT_IDS=789
+SYNOLOGY_GEOCODING_IDS=202,303
+```
+
+**German / Deutsch:** Dieser Fork unterstützt das Filtern von Fotos nach KI-generierten Alben von Synology Photos aus dem persönlichen Speicherplatz: **Personen** (Gesichtserkennung), **Concepts** (Szenen/Themen), **Geocoding** (Orte). Die Priorität ist: Persönliche Alben > Tags > Reguläre Alben.
+
+#### Fixed Frame Mode
+
+Display images in a configurable frame instead of fullscreen, creating a digital photo frame effect:
+
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {
+    useFixedFrame: true,
+    frameWidth: '80%',
+    frameHeight: '80%',
+    framePosition: 'center',
+    frameBackgroundColor: 'rgba(0, 0, 0, 0.5)',
+    // ... other settings
+  }
+}
+```
+
+**German / Deutsch:** Zeigt Bilder in einem konfigurierbaren Rahmen statt Vollbild an, erzeugt einen digitalen Bilderrahmen-Effekt.
+
+#### Enhanced Image Information Display
+
+Display capture date and addresses from `photo_metadata.json` with automatic UTC to CET/CEST timezone conversion:
+
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {
+    showImageInfo: true,
+    imageInfo: ['capturedate', 'fulladdress'],  // New options available
+    imageInfoLocation: 'bottomRight',
+    mapZoom: 13,  // Zoom level for location map (1-19)
+    // ... other settings
+  }
+}
+```
+
+**Available `imageInfo` options:**
+- `capturedate` - Capture date from metadata (UTC → CET/CEST)
+- `fulladdress` - Full address from metadata
+- `shortaddress` - Short address format "City - Country"
+- `address` - Address with priority: FullAddress > ShortAddress
+- `imagecount` - Display "X of Y"
+- `name` - Image name (existing)
+- `date` - Date from metadata only (no EXIF, updated behavior)
+
+**Note:** When `showImageInfo` is enabled and location data exists in `photo_metadata.json`, an interactive map is automatically displayed above the image information showing the photo's location.
+
+**German / Deutsch:** Zeigt Aufnahmedatum und Adressen aus `photo_metadata.json` mit automatischer UTC zu CET/CEST Zeitzonen-Umwandlung. Neue `imageInfo` Optionen: `capturedate`, `fulladdress`, `shortaddress`, `address`, `imagecount`. Wenn Standortdaten vorhanden sind, wird automatisch eine interaktive Karte oberhalb der Bildinformationen angezeigt.
+
 I also recommend adding the following to the `custom.css` to make the text a little brighter:
 
 ```css
@@ -398,6 +489,36 @@ The following properties can be configured:
         <br><b>Example:</b> <code>['Vacation', 'Family', 'Favorites']</code>
         <br><b>Default value:</b> <code>[]</code>
         <br>This value is <b>OPTIONAL</b>
+      </td>
+    </tr>
+    <tr>
+      <td><code>synologyPersonIds</code></td>
+      <td>Array of numbers, person IDs from Synology Photos AI-generated person albums. Filters photos containing specific people (face recognition). Takes priority over tags and regular albums. Works with personal space only.<br>
+        <br><b>Example:</b> <code>[123, 456]</code>
+        <br><b>Default value:</b> <code>[]</code>
+        <br><b>Environment variable:</b> <code>SYNOLOGY_PERSON_IDS=123,456</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> Array von Zahlen, Personen-IDs aus KI-generierten Personen-Alben von Synology Photos. Filtert Fotos mit bestimmten Personen (Gesichtserkennung). Hat Priorität über Tags und reguläre Alben. Funktioniert nur mit persönlichem Speicherplatz.
+      </td>
+    </tr>
+    <tr>
+      <td><code>synologyConceptIds</code></td>
+      <td>Array of numbers, concept IDs from Synology Photos AI-generated concept/theme albums. Filters photos by scenes/themes (e.g., "beach", "mountains", "food"). Takes priority over tags and regular albums. Works with personal space only.<br>
+        <br><b>Example:</b> <code>[789, 101]</code>
+        <br><b>Default value:</b> <code>[]</code>
+        <br><b>Environment variable:</b> <code>SYNOLOGY_CONCEPT_IDS=789,101</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> Array von Zahlen, Concept-IDs aus KI-generierten Concept/Themen-Alben von Synology Photos. Filtert Fotos nach Szenen/Themen (z.B. "Strand", "Berge", "Essen"). Hat Priorität über Tags und reguläre Alben. Funktioniert nur mit persönlichem Speicherplatz.
+      </td>
+    </tr>
+    <tr>
+      <td><code>synologyGeocodingIds</code></td>
+      <td>Array of numbers, geocoding IDs from Synology Photos AI-generated location albums. Filters photos by location (e.g., "Paris", "New York"). Takes priority over tags and regular albums. Works with personal space only.<br>
+        <br><b>Example:</b> <code>[202, 303]</code>
+        <br><b>Default value:</b> <code>[]</code>
+        <br><b>Environment variable:</b> <code>SYNOLOGY_GEOCODING_IDS=202,303</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> Array von Zahlen, Geocoding-IDs aus KI-generierten Orts-Alben von Synology Photos. Filtert Fotos nach Ort (z.B. "Paris", "New York"). Hat Priorität über Tags und reguläre Alben. Funktioniert nur mit persönlichem Speicherplatz.
       </td>
     </tr>
     <tr>
@@ -543,11 +664,12 @@ The following properties can be configured:
     </tr>
     <tr>
       <td><code>imageInfo</code></td>
-      <td>String value, a list of image properties to display in the image info div, separated by commas.  Possible values are : date (EXIF date from image), name (image name).
-      For the iamge name, the relative path from that defined in imagePaths is displayed if the recursiveSubDirectories option is set to true.<br>
-        <br><b>Example:</b> <code>date,name</code>
+      <td>String or array of strings, a list of image properties to display in the image info div, separated by commas. Possible values are: <code>name</code> (image name), <code>date</code> or <code>capturedate</code> (capture date from photo_metadata.json, UTC converted to CET/CEST), <code>fulladdress</code> (full address from photo_metadata.json), <code>shortaddress</code> (short address format "City - Country"), <code>address</code> (address with priority: FullAddress > ShortAddress), <code>imagecount</code> (displays "X of Y").<br>
+        <br><b>Note:</b> <code>date</code> and <code>capturedate</code> use metadata only (no EXIF fallback). Dates are automatically converted from UTC to CET/CEST timezone.<br>
+        <br><b>Example:</b> <code>['capturedate', 'fulladdress']</code> or <code>'capturedate,fulladdress'</code>
         <br><b>Default value:</b> <code>name</code>
         <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> String oder Array von Strings, Liste von Bildeigenschaften zur Anzeige im Bildinfo-Div, durch Kommas getrennt. Mögliche Werte: <code>name</code> (Bildname), <code>date</code> oder <code>capturedate</code> (Aufnahmedatum aus photo_metadata.json, UTC zu CET/CEST konvertiert), <code>fulladdress</code> (vollständige Adresse aus photo_metadata.json), <code>shortaddress</code> (kurze Adresse "Stadt - Land"), <code>address</code> (Adresse mit Priorität: FullAddress > ShortAddress), <code>imagecount</code> (zeigt "X von Y").
       </td>
     </tr>
     <tr>
@@ -702,6 +824,61 @@ The following properties can be configured:
         <br><b>Example:</b> <code>true</code>
         <br><b>Default value:</b> <code>false</code>
         <br>This value is <b>OPTIONAL</b>
+      </td>
+    </tr>
+    <tr>
+      <td><code>useFixedFrame</code></td>
+      <td>Boolean value, if true images are displayed in a fixed frame instead of fullscreen. Creates a digital photo frame effect with configurable frame size and position.<br>
+        <br><b>Example:</b> <code>true</code>
+        <br><b>Default value:</b> <code>false</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> Boolean-Wert, wenn true werden Bilder in einem festen Rahmen statt Vollbild angezeigt. Erzeugt einen digitalen Bilderrahmen-Effekt mit konfigurierbarer Rahmen-Größe und Position.
+      </td>
+    </tr>
+    <tr>
+      <td><code>frameWidth</code></td>
+      <td>String value, width of the fixed frame (CSS value). Only used when useFixedFrame is true.<br>
+        <br><b>Example:</b> <code>'80%'</code> or <code>'1200px'</code>
+        <br><b>Default value:</b> <code>'80%'</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> String-Wert, Breite des festen Rahmens (CSS-Wert). Wird nur verwendet, wenn useFixedFrame true ist.
+      </td>
+    </tr>
+    <tr>
+      <td><code>frameHeight</code></td>
+      <td>String value, height of the fixed frame (CSS value). Only used when useFixedFrame is true.<br>
+        <br><b>Example:</b> <code>'80%'</code> or <code>'800px'</code>
+        <br><b>Default value:</b> <code>'80%'</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> String-Wert, Höhe des festen Rahmens (CSS-Wert). Wird nur verwendet, wenn useFixedFrame true ist.
+      </td>
+    </tr>
+    <tr>
+      <td><code>framePosition</code></td>
+      <td>String value, position of the fixed frame. Possible values: <code>'center'</code>, <code>'top'</code>, <code>'bottom'</code>, <code>'left'</code>, <code>'right'</code>, <code>'top-left'</code>, <code>'top-right'</code>, <code>'bottom-left'</code>, <code>'bottom-right'</code>. Only used when useFixedFrame is true.<br>
+        <br><b>Example:</b> <code>'center'</code>
+        <br><b>Default value:</b> <code>'center'</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> String-Wert, Position des festen Rahmens. Mögliche Werte: <code>'center'</code>, <code>'top'</code>, <code>'bottom'</code>, <code>'left'</code>, <code>'right'</code>, <code>'top-left'</code>, <code>'top-right'</code>, <code>'bottom-left'</code>, <code>'bottom-right'</code>. Wird nur verwendet, wenn useFixedFrame true ist.
+      </td>
+    </tr>
+    <tr>
+      <td><code>frameBackgroundColor</code></td>
+      <td>String value, background color around the fixed frame (CSS color value). Only used when useFixedFrame is true.<br>
+        <br><b>Example:</b> <code>'rgba(0, 0, 0, 0.5)'</code> or <code>'#000000'</code>
+        <br><b>Default value:</b> <code>'rgba(0, 0, 0, 0.5)'</code>
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> String-Wert, Hintergrundfarbe um den festen Rahmen (CSS-Farbwert). Wird nur verwendet, wenn useFixedFrame true ist.
+      </td>
+    </tr>
+    <tr>
+      <td><code>mapZoom</code></td>
+      <td>Integer value, zoom level for the geolocation map (1-19). The map displays above image information when location data is available in photo_metadata.json. Higher values show more detail. Only used when showImageInfo is true and location data exists.<br>
+        <br><b>Example:</b> <code>13</code> (neighborhood level) or <code>15</code> (street level)
+        <br><b>Default value:</b> <code>13</code>
+        <br><b>Zoom levels:</b> 1-5 (continent/country), 6-9 (region/state), 10-12 (city), 13-14 (neighborhood), 15-17 (street/building), 18-19 (very detailed)
+        <br>This value is <b>OPTIONAL</b>
+        <br><b>German / Deutsch:</b> Integer-Wert, Zoom-Level für die Geolocation-Karte (1-19). Die Karte wird oberhalb der Bildinformationen angezeigt, wenn Standortdaten in photo_metadata.json verfügbar sind. Höhere Werte zeigen mehr Details. Wird nur verwendet, wenn showImageInfo true ist und Standortdaten vorhanden sind.
       </td>
     </tr>
     </tbody>
