@@ -87,7 +87,7 @@ class UIBuilder {
     }
 
     const mapContainer = document.createElement('div');
-    mapContainer.className = `map-container ${this.config.imageInfoLocation}`;
+    mapContainer.className = 'map-container'; // Fixed position, no location class needed
     const mapId = `map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     mapContainer.id = mapId;
     
@@ -140,11 +140,82 @@ class UIBuilder {
   }
 
   /**
+   * Create world map div (left side, no zoom - shows location on world map)
+   */
+  createWorldMapDiv(wrapper: HTMLElement, location: string): HTMLDivElement | null {
+    // Parse location string from photo_metadata.json
+    const coords = this.parseLocation(location);
+    if (!coords) {
+      return null;
+    }
+
+    // Check if Leaflet is available
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (window as any).L === 'undefined') {
+      Log.warn('[MMM-SynPhotoSlideshow] Leaflet library not loaded, world map cannot be displayed');
+      return null;
+    }
+
+    const mapContainer = document.createElement('div');
+    mapContainer.className = 'world-map-container'; // Fixed position, no location class needed
+    const mapId = `world-map-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    mapContainer.id = mapId;
+    
+    // Append container to DOM first
+    wrapper.appendChild(mapContainer);
+    
+    // Initialize Leaflet map after container is in DOM
+    // Use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const L = (window as any).L;
+        // Use zoom level 2 for world map view (no zoom)
+        const map = L.map(mapId, {
+          zoomControl: false,
+          attributionControl: false,
+          dragging: false,
+          touchZoom: false,
+          doubleClickZoom: false,
+          scrollWheelZoom: false,
+          boxZoom: false,
+          keyboard: false
+        }).setView([coords.lat, coords.lon], 2); // Zoom level 2 for world map
+
+        // Add OpenStreetMap tile layer (German server for German labels)
+        L.tileLayer('https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add marker (smaller for world map)
+        L.marker([coords.lat, coords.lon], {
+          icon: L.icon({
+            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+            iconSize: [20, 32], // Smaller marker for world map
+            iconAnchor: [10, 32],
+            popupAnchor: [1, -34]
+          })
+        }).addTo(map);
+
+        // Trigger map resize to ensure proper rendering
+        setTimeout(() => {
+          map.invalidateSize();
+        }, 50);
+      } catch (error) {
+        Log.warn(`[MMM-SynPhotoSlideshow] Failed to create world map: ${(error as Error).message}`);
+      }
+    }, 10);
+    
+    return mapContainer;
+  }
+
+  /**
    * Create image info div
    */
   createImageInfoDiv(wrapper: HTMLElement): HTMLDivElement {
     const div = document.createElement('div');
-    div.className = `info ${this.config.imageInfoLocation}`;
+    div.className = `info ${this.config.imageInfoLocation}`; // Keep class for compatibility, but CSS overrides position
     wrapper.appendChild(div);
     return div;
   }

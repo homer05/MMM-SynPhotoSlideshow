@@ -493,15 +493,22 @@ export default class ModuleController {
         oldInfoDiv.remove();
       }
       
-      // Remove old map if it exists
+      // Remove old maps if they exist
       const oldMap = transitionDiv.querySelector('.map-container');
       if (oldMap) {
         oldMap.remove();
       }
+      const oldWorldMap = transitionDiv.querySelector('.world-map-container');
+      if (oldWorldMap) {
+        oldWorldMap.remove();
+      }
       
-      // Create map if location string is available from photo_metadata.json
+      // Create maps if location string is available from photo_metadata.json
       if (imageinfo.metadata?.location) {
+        // Create detailed map (right side, with zoom)
         this.uiBuilder.createMapDiv(transitionDiv, imageinfo.metadata.location);
+        // Create world map (left side, no zoom)
+        this.uiBuilder.createWorldMapDiv(transitionDiv, imageinfo.metadata.location);
       }
       
       // Create new info div for this image

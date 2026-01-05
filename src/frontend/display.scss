@@ -76,7 +76,7 @@
 			pointer-events: none;
 		}
 
-		/* Map container for geolocation display */
+		/* Map container for geolocation display (detailed map, right side, below world map) */
 		.map-container {
 		position: absolute;
 		z-index: 11;
@@ -87,30 +87,28 @@
 		background: rgba(0, 0, 0, 0.3);
 		width: 200px;
 		height: 150px;
-
-		// Position map above info based on imageInfoLocation
-		&.bottomRight {
-			bottom: 180px;
-			right: 10px;
+		// Fixed position: right side, below world map
+		top: 170px; // 10px top margin + 150px world map height + 10px gap
+		right: 10px;
 		}
 
-		&.bottomLeft {
-			bottom: 180px;
-			left: 10px;
+		/* World map container (right side, top) */
+		.world-map-container {
+		position: absolute;
+		z-index: 11;
+		pointer-events: none;
+		border-radius: 4px;
+		overflow: hidden;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+		background: rgba(0, 0, 0, 0.3);
+		width: 200px;
+		height: 150px;
+		// Fixed position: right side, top
+		top: 10px;
+		right: 10px;
 		}
 
-		&.topRight {
-			top: 10px;
-			right: 10px;
-		}
-
-		&.topLeft {
-			top: 10px;
-			left: 10px;
-		}
-		}
-
-		/* Image info display */
+		/* Image info display - fixed position: left top */
 		.info {
 		position: absolute;
 		padding: 10px 20px;
@@ -119,26 +117,38 @@
 		z-index: 10;
 		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
 		pointer-events: none;
+		// Fixed position: left top
+		top: 10px;
+		left: 10px;
+		text-align: left;
 
 		&.bottomRight {
-			bottom: 10px;
-			right: 10px;
-			text-align: right;
+			// Override: always use top-left position
+			top: 10px;
+			left: 10px;
+			bottom: auto;
+			right: auto;
+			text-align: left;
 		}
 
 		&.bottomLeft {
-			bottom: 10px;
+			// Override: always use top-left position
+			top: 10px;
 			left: 10px;
+			bottom: auto;
 			text-align: left;
 		}
 
 		&.topRight {
+			// Override: always use top-left position
 			top: 10px;
-			right: 10px;
-			text-align: right;
+			left: 10px;
+			right: auto;
+			text-align: left;
 		}
 
 		&.topLeft {
+			// Already at top-left position
 			top: 10px;
 			left: 10px;
 			text-align: left;
