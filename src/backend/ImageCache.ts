@@ -189,6 +189,12 @@ class ImageCache {
         }
 
         try {
+          // PROTECTION: Never delete photo_metadata.json (even if it somehow ends up in cache dir)
+          if (file.name === 'photo_metadata.json' || file.name.endsWith('photo_metadata.json')) {
+            Log.debug(`Skipping photo_metadata.json in eviction (protected file)`);
+            continue;
+          }
+          
           await fsPromises.unlink(file.path);
           // Extract key from filename (remove extension)
           const key = file.name.replace(/\.(jpg|jpeg|png|heic|webp)$/i, '');
@@ -486,6 +492,7 @@ class ImageCache {
 
   /**
    * Clear all cache
+   * IMPORTANT: Never deletes photo_metadata.json - it's stored outside cache directory
    */
   async clear(): Promise<void> {
     if (!this.cache || !this.cacheDir) {
@@ -504,6 +511,11 @@ class ImageCache {
           await Promise.all(
             batch.map(async (file) => {
               try {
+                // PROTECTION: Never delete photo_metadata.json (even if it somehow ends up in cache dir)
+                if (file === 'photo_metadata.json' || file.endsWith('photo_metadata.json')) {
+                  Log.debug(`Skipping photo_metadata.json in cache clear (protected file)`);
+                  return;
+                }
                 const filePath = path.join(this.cacheDir!, file);
                 await fsPromises.unlink(filePath);
               } catch {

@@ -417,6 +417,9 @@ class ExifExtractor {
       this.metadataFilePath = path.join(__dirname, '..', '..', 'photo_metadata.json');
     }
     Log.debug(`Metadata file path: ${this.metadataFilePath}`);
+    
+    // Analyze database on startup (async, non-blocking)
+    void this.analyzeMetadataDatabase();
   }
 
   /**
@@ -480,6 +483,14 @@ class ExifExtractor {
   /**
    * Save centralized metadata database
    * Uses atomic write (temporary file + rename) to prevent corruption
+   * 
+   * IMPORTANT: This file (photo_metadata.json) must NEVER be deleted, even when:
+   * - Cache is cleared
+   * - Old files are evicted
+   * - New images are loaded from Synology
+   * - filesShownTracker.txt is reset
+   * 
+   * The file is stored outside the cache directory to protect it from cache operations.
    */
   private async saveMetadataDatabase(database: PhotoMetadataDatabase): Promise<void> {
     if (!this.metadataFilePath) {
@@ -628,7 +639,10 @@ class ExifExtractor {
 
       database[key] = entry;
       await this.saveMetadataDatabase(database);
-      Log.debug(`Saved metadata for photo ${synologyId} to centralized database`);
+      Log.debug(`[Metadata Update] New photo ${synologyId} added to metadata database`);
+      
+      // Trigger analysis after adding new photo
+      void this.analyzeMetadataDatabase();
 
       // If location is available, try to geocode
       if (metadata.location) {
@@ -883,6 +897,50 @@ class ExifExtractor {
   }
 
   /**
+   * Analyze metadata database and log statistics (for debugging)
+   */
+  async analyzeMetadataDatabase(): Promise<void> {
+    if (!this.metadataFilePath) {
+      Log.debug('[Metadata Analysis] Metadata file path not initialized');
+      return;
+    }
+
+    try {
+      const database = await this.loadMetadataDatabase();
+      const totalPhotos = Object.keys(database).length;
+      
+      if (totalPhotos === 0) {
+        Log.debug('[Metadata Analysis] Database is empty (0 photos)');
+        return;
+      }
+
+      let photosWithLocationButNoAddress = 0;
+      let photosWithoutLocation = 0;
+
+      for (const key in database) {
+        const entry = database[key];
+        const hasLocation = !!entry.location;
+        const hasFullAddress = !!entry.FullAddress;
+        const hasShortAddress = !!entry.ShortAddress;
+        
+        if (hasLocation && (!hasFullAddress || !hasShortAddress)) {
+          photosWithLocationButNoAddress++;
+        } else if (!hasLocation) {
+          photosWithoutLocation++;
+        }
+      }
+
+      Log.debug(
+        `[Metadata Analysis] Total photos in database: ${totalPhotos} | ` +
+        `Photos with location but no address: ${photosWithLocationButNoAddress}/${totalPhotos} | ` +
+        `Photos without location: ${photosWithoutLocation}/${totalPhotos}`
+      );
+    } catch (error) {
+      Log.warn(`[Metadata Analysis] Failed to analyze metadata database: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Update address for a photo in the metadata database (thread-safe)
    */
   private async updatePhotoAddress(
@@ -898,10 +956,18 @@ class ExifExtractor {
     try {
       const database = await this.loadMetadataDatabase();
       if (database[key]) {
+        const wasUpdate = !database[key].FullAddress || !database[key].ShortAddress;
         database[key].FullAddress = FullAddress;
         database[key].ShortAddress = ShortAddress;
         await this.saveMetadataDatabase(database);
-        Log.debug(`Updated address for photo ${key} in metadata database: FullAddress="${FullAddress}", ShortAddress="${ShortAddress}"`);
+        
+        if (wasUpdate) {
+          Log.debug(`[Metadata Update] Photo ${key} updated with address: FullAddress="${FullAddress}", ShortAddress="${ShortAddress}"`);
+          // Trigger analysis after update
+          void this.analyzeMetadataDatabase();
+        } else {
+          Log.debug(`Updated address for photo ${key} in metadata database: FullAddress="${FullAddress}", ShortAddress="${ShortAddress}"`);
+        }
       }
     } catch (error) {
       Log.warn(`Failed to update photo address: ${(error as Error).message}`);
