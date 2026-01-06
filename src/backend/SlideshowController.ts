@@ -372,8 +372,7 @@ export default class SlideshowController {
         
         if (unseenNewPhotos.length > 0) {
           Log.info(`Preloading ${unseenNewPhotos.length} new unseen photos in background`);
-          const photos = await this.synologyManager.fetchPhotos(this.config, 0, true);
-          this.imageListManager.prepareImageList(photos, this.config, true); // Preload mode
+          this.imageListManager.prepareImageList(newPhotos, this.config, true); // Preload mode
           return;
         }
       }

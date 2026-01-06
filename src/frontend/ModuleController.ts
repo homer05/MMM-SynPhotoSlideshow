@@ -59,7 +59,7 @@ export default class ModuleController {
 
   private playingVideo = false;
 
-  private timer: NodeJS.Timeout | null = null;
+  private timer: number | null = null;
 
   private savedImages: string[] | null = null;
 

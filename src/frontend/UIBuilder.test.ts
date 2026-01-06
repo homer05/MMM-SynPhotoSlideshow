@@ -441,15 +441,18 @@ describe('UIBuilder', () => {
     it('should display date when in config', () => {
       mockConfig.imageInfo = ['date'];
       builder = new UIBuilder(mockConfig as ModuleConfig);
+      imageInfo.metadata = { captureDate: '2025-11-09T12:00:00.000Z' };
 
       builder.updateImageInfo(imageInfoDiv, imageInfo, '2025-11-09', translate);
 
-      expect(imageInfoDiv.innerHTML).toContain('2025-11-09<br');
+      // Date is formatted from UTC to CET, so check for formatted date parts
+      expect(imageInfoDiv.innerHTML).toMatch(/\d{1,2}\.\s*\w+\s*\d{4}/);
     });
 
-    it('should not display date when Invalid date', () => {
+    it('should not display date when metadata is missing', () => {
       mockConfig.imageInfo = ['date'];
       builder = new UIBuilder(mockConfig as ModuleConfig);
+      imageInfo.metadata = undefined;
 
       builder.updateImageInfo(
         imageInfoDiv,
@@ -458,7 +461,10 @@ describe('UIBuilder', () => {
         translate
       );
 
-      expect(imageInfoDiv.innerHTML).not.toContain('Invalid date');
+      // Should not contain date since metadata is missing
+      const content = imageInfoDiv.innerHTML;
+      expect(content).toContain('<header');
+      expect(content.split('<br').length).toBe(1);
     });
 
     it('should not display date when imageDate is null', () => {
@@ -522,13 +528,15 @@ describe('UIBuilder', () => {
       imageInfo.path = '/photos/sunset.jpg';
       imageInfo.index = 3;
       imageInfo.total = 10;
+      imageInfo.metadata = { captureDate: '2025-11-09T12:00:00.000Z' };
 
       builder.updateImageInfo(imageInfoDiv, imageInfo, '2025-11-09', translate);
 
       const content = imageInfoDiv.innerHTML;
       const countIndex = content.indexOf('3 of 10');
       const nameIndex = content.indexOf('sunset.jpg');
-      const dateIndex = content.indexOf('2025-11-09');
+      // Date is formatted, so check for formatted date parts instead
+      const dateIndex = content.search(/\d{1,2}\.\s*\w+\s*\d{4}/);
 
       expect(countIndex).toBeLessThan(nameIndex);
       expect(nameIndex).toBeLessThan(dateIndex);
@@ -548,10 +556,12 @@ describe('UIBuilder', () => {
     it('should continue processing after invalid property', () => {
       mockConfig.imageInfo = ['invalid', 'date'];
       builder = new UIBuilder(mockConfig as ModuleConfig);
+      imageInfo.metadata = { captureDate: '2025-11-09T12:00:00.000Z' };
 
       builder.updateImageInfo(imageInfoDiv, imageInfo, '2025-11-09', translate);
 
-      expect(imageInfoDiv.innerHTML).toContain('2025-11-09<br');
+      // Date is formatted, so check for formatted date parts
+      expect(imageInfoDiv.innerHTML).toMatch(/\d{1,2}\.\s*\w+\s*\d{4}/);
     });
 
     it('should handle empty imageInfo array', () => {
@@ -608,14 +618,16 @@ describe('UIBuilder', () => {
       const imageInfo = createMockImageInfo({
         path: '/vacation/sunset.jpg',
         index: 7,
-        total: 25
+        total: 25,
+        metadata: { captureDate: '2025-11-09T12:00:00.000Z' }
       });
       const translate = createMockTranslate();
 
       builder.updateImageInfo(infoDiv, imageInfo, '2025-11-09', translate);
 
       expect(infoDiv.innerHTML).toContain('Picture Information');
-      expect(infoDiv.innerHTML).toContain('2025-11-09');
+      // Date is formatted, so check for formatted date parts
+      expect(infoDiv.innerHTML).toMatch(/\d{1,2}\.\s*\w+\s*\d{4}/);
       expect(infoDiv.innerHTML).toContain('sunset.jpg');
       expect(infoDiv.innerHTML).toContain('7 of 25');
     });
