@@ -1,5 +1,12 @@
 # MMM-SynPhotoSlideshow
 
+> **⚠️ This is a Fork / Dies ist ein Fork**  
+> This repository is a fork of the original [MMM-SynPhotoSlideshow](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow) with additional features and enhancements.  
+> Dieses Repository ist ein Fork des originalen [MMM-SynPhotoSlideshow](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow) mit zusätzlichen Features und Verbesserungen.  
+> 
+> **📖 For a complete list of differences, see [docs/FORK_DIFFERENCES.md](docs/FORK_DIFFERENCES.md)**  
+> **📖 Für eine vollständige Liste der Unterschiede, siehe [docs/FORK_DIFFERENCES.md](docs/FORK_DIFFERENCES.md)**
+
 [![PR Checks](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow/actions/workflows/pr-checks.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=spydersoft-consulting_MMM-SynPhotoSlideshow&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=spydersoft-consulting_MMM-SynPhotoSlideshow)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=spydersoft-consulting_MMM-SynPhotoSlideshow&metric=coverage)](https://sonarcloud.io/summary/new_code?id=spydersoft-consulting_MMM-SynPhotoSlideshow)
@@ -12,8 +19,7 @@ The `MMM-SynPhotoSlideshow` module connects directly to your Synology DiskStatio
 
 Based on [MMM-ImageSlideshow](https://github.com/AdamMoses-GitHub/MMM-ImageSlideshow/) and [MMM-BackgroundSlideshow](https://github.com/darickc/MMM-BackgroundSlideshow/).
 
-<img src="https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow/blob/main/screenshots/landscape.jpg" style="width: 300px;" alt="landscape screenshot" />
-<img src="https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow/blob/main/screenshots/portait.jpg" style="width: 300px;" alt="portrait screenshot" />
+<img src="https://github.com/homer05/MMM-SynPhotoSlideshow/blob/main/screenshots/MMM-SynPhotoSlideshow.png" style="width: 300px;" alt="landscape screenshot" />
 
 ## Dependencies / Requirements
 
