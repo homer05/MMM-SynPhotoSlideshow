@@ -59,7 +59,7 @@ export default class ModuleController {
 
   private playingVideo = false;
 
-  private timer: NodeJS.Timeout | null = null;
+  private timer: number | null = null;
 
   private savedImages: string[] | null = null;
 
@@ -434,6 +434,23 @@ export default class ModuleController {
       'x',
       image.height
     );
+    
+    // Destroy Leaflet maps in old transition divs BEFORE cleanupOldImages removes them
+    // This prevents memory leaks from Leaflet map instances
+    if (this.imagesDiv && this.uiBuilder) {
+      const oldTransitionDivs = Array.from(this.imagesDiv.children) as HTMLElement[];
+      for (const oldDiv of oldTransitionDivs) {
+        const oldMap = oldDiv.querySelector('.map-container') as HTMLElement;
+        if (oldMap) {
+          this.uiBuilder.destroyMap(oldMap);
+        }
+        const oldWorldMap = oldDiv.querySelector('.world-map-container') as HTMLElement;
+        if (oldWorldMap) {
+          this.uiBuilder.destroyMap(oldWorldMap);
+        }
+      }
+    }
+    
     // Clean up old images
     if (this.imagesDiv && this.transitionHandler) {
       this.transitionHandler.cleanupOldImages(this.imagesDiv);
@@ -487,22 +504,6 @@ export default class ModuleController {
     
     // Add image info div to the current transition div if enabled
     if (this.config.showImageInfo && this.uiBuilder) {
-      // Remove old info div if it exists
-      const oldInfoDiv = transitionDiv.querySelector('.info');
-      if (oldInfoDiv) {
-        oldInfoDiv.remove();
-      }
-      
-      // Remove old maps if they exist
-      const oldMap = transitionDiv.querySelector('.map-container');
-      if (oldMap) {
-        oldMap.remove();
-      }
-      const oldWorldMap = transitionDiv.querySelector('.world-map-container');
-      if (oldWorldMap) {
-        oldWorldMap.remove();
-      }
-      
       // Create maps if location string is available from photo_metadata.json
       if (imageinfo.metadata?.location) {
         // Create detailed map (right side, with zoom)

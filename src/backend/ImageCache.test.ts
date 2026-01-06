@@ -35,6 +35,7 @@ describe('ImageCache', () => {
     set: jest.Mock;
     del: jest.Mock;
     flushAll: jest.Mock;
+    keys: jest.Mock;
   };
 
   beforeEach(() => {
@@ -53,7 +54,8 @@ describe('ImageCache', () => {
       get: jest.fn(),
       set: jest.fn(),
       del: jest.fn(),
-      flushAll: jest.fn()
+      flushAll: jest.fn(),
+      keys: jest.fn().mockReturnValue([])
     };
 
     (NodeCache as unknown as jest.Mock).mockImplementation(
@@ -410,11 +412,13 @@ describe('ImageCache', () => {
     it('should return cached data from memory cache', async () => {
       const imageData = 'base64encodeddata';
       mockCacheInstance.get.mockReturnValue(true);
-      (fsPromises.readFile as jest.Mock).mockResolvedValue(imageData);
+      (fsPromises.access as jest.Mock).mockResolvedValue(null);
 
       const result = await imageCache.get('image.jpg');
 
-      expect(result).toBe(imageData);
+      // get() now returns file path, not data
+      expect(result).toContain('.image-cache');
+      expect(result).toMatch(/\.(jpg|jpeg|png|heic|webp)$/);
       expect(Log.debug).toHaveBeenCalledWith(
         expect.stringContaining('Cache hit')
       );
@@ -424,11 +428,12 @@ describe('ImageCache', () => {
       const imageData = 'base64encodeddata';
       mockCacheInstance.get.mockReturnValue(null);
       (fsPromises.access as jest.Mock).mockResolvedValue(null);
-      (fsPromises.readFile as jest.Mock).mockResolvedValue(imageData);
 
       const result = await imageCache.get('image.jpg');
 
-      expect(result).toBe(imageData);
+      // get() now returns file path, not data
+      expect(result).toContain('.image-cache');
+      expect(result).toMatch(/\.(jpg|jpeg|png|heic|webp)$/);
       expect(mockCacheInstance.set).toHaveBeenCalled();
       expect(Log.debug).toHaveBeenCalledWith(
         expect.stringContaining('Disk cache hit')
@@ -449,7 +454,7 @@ describe('ImageCache', () => {
 
     it('should remove from memory cache if disk file is missing', async () => {
       mockCacheInstance.get.mockReturnValue(true);
-      (fsPromises.readFile as jest.Mock).mockRejectedValue(new Error('ENOENT'));
+      (fsPromises.access as jest.Mock).mockRejectedValue(new Error('ENOENT'));
 
       const result = await imageCache.get('image.jpg');
 
@@ -476,24 +481,33 @@ describe('ImageCache', () => {
       await imageCache.initialize();
     });
 
-    it('should return false when cache is not initialized', async () => {
+    it('should return null when cache is not initialized', async () => {
       const uninitializedCache = new ImageCache(mockConfig as never);
       const result = await uninitializedCache.set('image.jpg', 'data');
 
-      expect(result).toBe(false);
+      expect(result).toBeNull();
     });
 
     it('should store image data in cache', async () => {
       (fsPromises.writeFile as jest.Mock).mockResolvedValue(null);
+      // Ensure cache and cacheDir are set by checking internal state
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cache = (imageCache as any).cache;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cacheDir = (imageCache as any).cacheDir;
+      expect(cache).toBeDefined();
+      expect(cacheDir).toBeDefined();
 
       const result = await imageCache.set('image.jpg', 'imagedata');
 
-      expect(result).toBe(true);
+      // set() now returns file path, not boolean
+      expect(result).not.toBeNull();
+      expect(result).toContain('.image-cache');
+      expect(result).toMatch(/\.jpg$/);
       expect(mockCacheInstance.set).toHaveBeenCalled();
       expect(fsPromises.writeFile).toHaveBeenCalledWith(
         expect.any(String),
-        'imagedata',
-        'utf8'
+        expect.any(Buffer)
       );
     });
 
@@ -502,14 +516,20 @@ describe('ImageCache', () => {
       const imageData = 'base64imagedata';
 
       const setResult = await imageCache.set('test-image.jpg', imageData);
-      expect(setResult).toBe(true);
+      // set() now returns file path, not boolean
+      expect(setResult).not.toBeNull();
+      expect(setResult).toContain('.image-cache');
+      expect(setResult).toMatch(/\.jpg$/);
 
       // Verify data can be retrieved
       mockCacheInstance.get.mockReturnValue(true);
-      (fsPromises.readFile as jest.Mock).mockResolvedValue(imageData);
+      (fsPromises.access as jest.Mock).mockResolvedValue(null);
 
       const getResult = await imageCache.get('test-image.jpg');
-      expect(getResult).toBe(imageData);
+      // get() now returns file path, not data
+      expect(getResult).not.toBeNull();
+      expect(getResult).toContain('.image-cache');
+      expect(getResult).toMatch(/\.(jpg|jpeg|png|heic|webp)$/);
     });
 
     it('should handle write errors', async () => {
@@ -519,7 +539,7 @@ describe('ImageCache', () => {
 
       const result = await imageCache.set('image.jpg', 'data');
 
-      expect(result).toBe(false);
+      expect(result).toBeNull();
       expect(Log.error).toHaveBeenCalledWith(
         expect.stringContaining('Error setting cache')
       );
@@ -542,9 +562,9 @@ describe('ImageCache', () => {
       const largeData = 'x'.repeat(2 * 1024 * 1024);
       await imageCache.set('large-image.jpg', largeData);
 
-      // Give time for async eviction to be called
+      // Give time for async eviction to be called (evictOldFiles is called asynchronously)
       await new Promise<void>((resolve) => {
-        setTimeout(() => resolve(), 10);
+        setTimeout(() => resolve(), 50);
       });
 
       expect(evictSpy).toHaveBeenCalled();

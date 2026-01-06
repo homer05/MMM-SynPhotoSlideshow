@@ -157,6 +157,11 @@ describe('Logger', () => {
   });
 
   describe('debug', () => {
+    beforeEach(() => {
+      // Set log level to debug so debug messages are actually logged
+      Logger.setLogLevel('debug');
+    });
+
     it('should call MagicMirror logger debug method', () => {
       Logger.debug('Debug message');
 
@@ -265,6 +270,9 @@ describe('Logger', () => {
 
   describe('integration scenarios', () => {
     it('should handle multiple log levels in sequence', () => {
+      // Set log level to debug so debug messages are actually logged
+      Logger.setLogLevel('debug');
+      
       Logger.info('Info message');
       Logger.warn('Warning message');
       Logger.error('Error message');

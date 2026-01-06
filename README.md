@@ -341,7 +341,7 @@ Display capture date and addresses from `photo_metadata.json` with automatic UTC
   config: {
     showImageInfo: true,
     imageInfo: ['capturedate', 'fulladdress'],  // New options available
-    imageInfoLocation: 'bottomRight',
+    imageInfoLocation: 'bottomRight',  // DEPRECATED: No longer has any effect, image info is always top-left
     mapZoom: 13,  // Zoom level for location map (1-19)
     // ... other settings
   }
@@ -655,9 +655,9 @@ The following properties can be configured:
     </tr>
     <tr>
       <td><code>imageInfoLocation</code></td>
-      <td>String value, determines which corner of the screen the image info div should be displayed in.  Possible values are: bottomRight, bottomLeft, topLeft, topRight<br>
-        <br><b>Example:</b> <code>topLeft</code>
-        <br><b>Default value:</b> <code>bottomRight</code>
+      <td><b>DEPRECATED:</b> This option no longer has any effect. Image information is always displayed at the top-left corner of the image. The option is kept for backward compatibility but any value will be ignored.<br>
+        <br><b>Note:</b> Image info position is now fixed at top-left to ensure consistent placement with the world map (top-right) and detailed map (bottom-right).
+        <br><b>Default value:</b> <code>bottomRight</code> (ignored)
         <br>This value is <b>OPTIONAL</b>
       </td>
     </tr>

@@ -266,17 +266,17 @@ describe('ImageListManager', () => {
       expect(img3?.path).toBe('image3.jpg');
     });
 
-    it('should loop back to beginning when reaching end', () => {
+    it('should return null when reaching end', () => {
       // Advance to end
       manager.getNextImage(); // image1
       manager.getNextImage(); // image2
       manager.getNextImage(); // image3
 
-      const result = manager.getNextImage(); // Should loop to image1
+      const result = manager.getNextImage(); // Should return null at end
 
-      expect(result?.path).toBe('image1.jpg');
+      expect(result).toBeNull();
       expect(Log.info).toHaveBeenCalledWith(
-        'Reached end of list, looping to beginning'
+        'All images in current batch have been shown'
       );
     });
 
@@ -314,7 +314,8 @@ describe('ImageListManager', () => {
       const img2 = singleManager.getNextImage();
 
       expect(img1?.path).toBe('single.jpg');
-      expect(img2?.path).toBe('single.jpg');
+      // After showing the single image, getNextImage returns null
+      expect(img2).toBeNull();
     });
   });
 
