@@ -133,8 +133,20 @@ class UIBuilder {
         (mapContainer as any)._leafletMap = map;
 
         // Trigger map resize to ensure proper rendering
-        setTimeout(() => {
-          map.invalidateSize();
+        // Store timer reference so it can be cleared if map is destroyed early
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mapContainer as any)._leafletInvalidateTimer = setTimeout(() => {
+          try {
+            // Check if map still exists before calling invalidateSize
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const storedMap = (mapContainer as any)._leafletMap;
+            if (storedMap && typeof storedMap.invalidateSize === 'function') {
+              storedMap.invalidateSize();
+            }
+          } catch (error) {
+            // Silently ignore errors if map was already destroyed
+            Log.warn(`[MMM-SynPhotoSlideshow] Error calling invalidateSize: ${(error as Error).message}`);
+          }
         }, 50);
       } catch (error) {
         Log.warn(`[MMM-SynPhotoSlideshow] Failed to create map: ${(error as Error).message}`);
@@ -209,8 +221,20 @@ class UIBuilder {
         (mapContainer as any)._leafletMap = map;
 
         // Trigger map resize to ensure proper rendering
-        setTimeout(() => {
-          map.invalidateSize();
+        // Store timer reference so it can be cleared if map is destroyed early
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mapContainer as any)._leafletInvalidateTimer = setTimeout(() => {
+          try {
+            // Check if map still exists before calling invalidateSize
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const storedMap = (mapContainer as any)._leafletMap;
+            if (storedMap && typeof storedMap.invalidateSize === 'function') {
+              storedMap.invalidateSize();
+            }
+          } catch (error) {
+            // Silently ignore errors if map was already destroyed
+            Log.warn(`[MMM-SynPhotoSlideshow] Error calling invalidateSize: ${(error as Error).message}`);
+          }
         }, 50);
       } catch (error) {
         Log.warn(`[MMM-SynPhotoSlideshow] Failed to create world map: ${(error as Error).message}`);
@@ -227,6 +251,15 @@ class UIBuilder {
   destroyMap(mapContainer: HTMLElement | null): void {
     if (!mapContainer) {
       return;
+    }
+
+    // Clear pending invalidateSize timer if it exists
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invalidateTimer = (mapContainer as any)._leafletInvalidateTimer;
+    if (invalidateTimer) {
+      clearTimeout(invalidateTimer);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (mapContainer as any)._leafletInvalidateTimer;
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
