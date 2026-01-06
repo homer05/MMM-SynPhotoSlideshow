@@ -59,7 +59,9 @@ class SynologyPhotosClient {
 
   private readonly geocodingIds: number[];
 
-  private sid: string | null = null;
+  private sid: string | null = null; // FileStation session (for browsing)
+
+  private photoSid: string | null = null; // PhotoStation session (for downloading originals)
 
   private folderIds: number[] = [];
 
@@ -85,10 +87,12 @@ class SynologyPhotosClient {
     this.geocodingIds = config.synologyGeocodingIds || [];
     this.useSharedAlbum = Boolean(this.shareToken);
     this.maxPhotosToFetch = config.synologyMaxPhotos || 1000;
+    Log.debug(`SynologyPhotosClient initialized with maxPhotosToFetch: ${this.maxPhotosToFetch} (from config.synologyMaxPhotos: ${config.synologyMaxPhotos})`);
   }
 
   /**
    * Authenticate with Synology and get session ID
+   * Uses FileStation session for all operations
    */
   async authenticate(): Promise<boolean> {
     if (this.useSharedAlbum) {
@@ -96,8 +100,9 @@ class SynologyPhotosClient {
       return true;
     }
 
+    // Authenticate with FileStation (for browsing)
     try {
-      const response = await axios.get(`${this.baseUrl}${this.authApiPath}`, {
+      const fileStationResponse = await axios.get(`${this.baseUrl}${this.authApiPath}`, {
         params: {
           api: 'SYNO.API.Auth',
           version: '3',
@@ -110,19 +115,54 @@ class SynologyPhotosClient {
         timeout: 10000
       });
 
-      if (response.data.success) {
-        this.sid = response.data.data.sid;
-        Log.info('Successfully authenticated with Synology');
-        return true;
+      if (fileStationResponse.data.success) {
+        this.sid = fileStationResponse.data.data.sid;
+        Log.debug('Successfully authenticated with FileStation session');
+      } else {
+        Log.warn(`FileStation authentication failed: ${JSON.stringify(fileStationResponse.data)}`);
       }
-      Log.error(
-        `Synology authentication failed: ${JSON.stringify(response.data)}`
-      );
-      return false;
     } catch (error) {
-      Log.error(`Synology authentication error: ${(error as Error).message}`);
-      return false;
+      Log.warn(`FileStation authentication error: ${(error as Error).message}`);
     }
+
+    // Authenticate with PhotoStation (optional - not required, FileStation is sufficient)
+    try {
+      const photoStationResponse = await axios.get(`${this.baseUrl}${this.authApiPath}`, {
+        params: {
+          api: 'SYNO.API.Auth',
+          version: '3',
+          method: 'login',
+          account: this.account,
+          passwd: this.password,
+          session: 'PhotoStation',
+          format: 'sid'
+        },
+        timeout: 10000
+      });
+
+      if (photoStationResponse.data.success) {
+        this.photoSid = photoStationResponse.data.data.sid;
+        Log.info('Successfully authenticated with PhotoStation session');
+      } else {
+        // PhotoStation is optional - FileStation is sufficient for our use case
+        Log.debug(`PhotoStation authentication failed (not critical): ${JSON.stringify(photoStationResponse.data)}`);
+      }
+    } catch (error) {
+      // PhotoStation is optional - FileStation is sufficient for our use case
+      Log.debug(`PhotoStation authentication error (not critical): ${(error as Error).message}`);
+    }
+
+    // At least one session should work
+    if (this.sid || this.photoSid) {
+      const sessions = [];
+      if (this.sid) sessions.push('FileStation');
+      if (this.photoSid) sessions.push('PhotoStation');
+      Log.info(`Successfully authenticated with Synology (sessions: ${sessions.join(', ')})`);
+      return true;
+    }
+
+    Log.error('Failed to authenticate with any Synology session');
+    return false;
   }
 
   /**
@@ -330,11 +370,12 @@ class SynologyPhotosClient {
    * Fetch photos from a person album (KI-generated album)
    * Uses person_id parameter
    */
-  private async fetchPersonPhotos(personId: number): Promise<PhotoItem[]> {
+  private async fetchPersonPhotos(personId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       personId,
       'person_id',
-      'person'
+      'person',
+      offset
     );
   }
 
@@ -342,11 +383,12 @@ class SynologyPhotosClient {
    * Fetch photos from a concept album (KI-generated album)
    * Uses concept_id parameter
    */
-  private async fetchConceptPhotos(conceptId: number): Promise<PhotoItem[]> {
+  private async fetchConceptPhotos(conceptId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       conceptId,
       'concept_id',
-      'concept'
+      'concept',
+      offset
     );
   }
 
@@ -354,11 +396,12 @@ class SynologyPhotosClient {
    * Fetch photos from a geocoding album (KI-generated album)
    * Uses geocoding_id parameter
    */
-  private async fetchGeocodingPhotos(geocodingId: number): Promise<PhotoItem[]> {
+  private async fetchGeocodingPhotos(geocodingId: number, offset: number = 0): Promise<PhotoItem[]> {
     return await this.tryFetchPersonalSpaceAlbum(
       geocodingId,
       'geocoding_id',
-      'geocoding'
+      'geocoding',
+      offset
     );
   }
 
@@ -368,19 +411,20 @@ class SynologyPhotosClient {
   private async tryFetchPersonalSpaceAlbum(
     albumId: number,
     paramName: string,
-    typeName: string
+    typeName: string,
+    offset: number = 0
   ): Promise<PhotoItem[]> {
     try {
-      // For personal space albums, use a reasonable limit
-      // Synology API might have restrictions, so we use a safe default
-      const limit = Math.min(this.maxPhotosToFetch || 1000, 5000);
+      // SYNOLOGY_MAX_PHOTOS is now a batch size - fetch exactly that many photos
+      const batchSize = this.maxPhotosToFetch > 0 ? this.maxPhotosToFetch : 100;
+      Log.debug(`Fetching ${typeName} ${albumId} with batch size: ${batchSize}, offset: ${offset}`);
 
       const params: Record<string, unknown> = {
         api: 'SYNO.Foto.Browse.Item',
         version: '1',
         method: 'list',
-        offset: 0,
-        limit: limit > 0 ? limit : 1000, // Ensure limit is positive
+        offset: offset,
+        limit: batchSize,
         space_id: 0,
         _sid: this.sid,
         additional:
@@ -399,11 +443,36 @@ class SynologyPhotosClient {
       });
 
       if (response.data.success) {
-        const rawPhotos: SynologyPhoto[] = response.data.data.list;
+        const rawPhotos: SynologyPhoto[] = response.data.data.list || [];
+        Log.debug(`API returned ${rawPhotos.length} photos for ${typeName} ${albumId} (batch size: ${batchSize}, offset: ${offset})`);
+        
+        // Store person_id for person albums (used for alternative download method)
+        const personId = paramName === 'person_id' ? albumId : undefined;
+        
+        // Process photos first, then sort by creation date (newest first)
+        let processedPhotos = this.processPhotoList(rawPhotos, 0, personId);
+        
+        // Sort by creation date (newest first) to ensure new images are prioritized
+        processedPhotos.sort((a, b) => {
+          const dateA = a.created || 0;
+          const dateB = b.created || 0;
+          return dateB - dateA; // Descending order (newest first)
+        });
+        Log.debug(`After processing: ${processedPhotos.length} photos (filtered from ${rawPhotos.length} raw photos)`);
+        
         Log.info(
-          `Successfully fetched ${rawPhotos.length} photos for personal space album ${albumId} as ${typeName}`
+          `Successfully fetched ${processedPhotos.length} photos for personal space album ${albumId} as ${typeName} (offset: ${offset})`
         );
-        return this.processPhotoList(rawPhotos, 0);
+        
+        // Debug: Create mapping of unit_id to person_id for person albums
+        if (paramName === 'person_id' && processedPhotos.length > 0) {
+          const unitIds = processedPhotos.map(photo => photo.synologyId).filter(id => id !== undefined).join(', ');
+          Log.debug(
+            `Person ID ${albumId} (${typeName}) contains ${processedPhotos.length} photos with unit_ids: ${unitIds}`
+          );
+        }
+        
+        return processedPhotos;
       }
 
       // If error 120 (limit condition), try again without limit or with smaller limit
@@ -428,7 +497,19 @@ class SynologyPhotosClient {
           Log.info(
             `Successfully fetched ${rawPhotos.length} photos for personal space album ${albumId} as ${typeName} (with reduced limit)`
           );
-          return this.processPhotoList(rawPhotos, 0);
+          
+          // Store person_id for person albums (used for alternative download method)
+          const personId = paramName === 'person_id' ? albumId : undefined;
+          
+          // Debug: Create mapping of unit_id to person_id for person albums
+          if (paramName === 'person_id' && rawPhotos.length > 0) {
+            const unitIds = rawPhotos.map(photo => photo.id).join(', ');
+            Log.debug(
+              `Person ID ${albumId} (${typeName}) contains ${rawPhotos.length} photos with unit_ids: ${unitIds}`
+            );
+          }
+          
+          return this.processPhotoList(rawPhotos, 0, personId);
         }
       }
 
@@ -450,31 +531,36 @@ class SynologyPhotosClient {
   /**
    * Fetch photos from persons, concepts, and geocoding albums
    * These are KI-generated albums from the personal_space
+   * @param offset - Offset for pagination (default: 0)
+   * @param checkForNewFirst - If true, fetch newest photos first (offset 0), then continue with offset
    */
-  private async fetchPhotosByPersonalSpaceAlbums(): Promise<PhotoItem[]> {
+  private async fetchPhotosByPersonalSpaceAlbums(offset: number = 0, checkForNewFirst: boolean = false): Promise<PhotoItem[]> {
     const fetchPromises: Promise<PhotoItem[]>[] = [];
+
+    // If checking for new photos first, fetch offset 0 for all albums
+    const actualOffset = checkForNewFirst ? 0 : offset;
 
     // Fetch person photos
     if (this.personIds.length > 0) {
-      Log.info(`Fetching photos from persons: ${this.personIds.join(', ')}`);
+      Log.info(`Fetching photos from persons: ${this.personIds.join(', ')} (offset: ${actualOffset})`);
       for (const personId of this.personIds) {
-        fetchPromises.push(this.fetchPersonPhotos(personId));
+        fetchPromises.push(this.fetchPersonPhotos(personId, actualOffset));
       }
     }
 
     // Fetch concept photos
     if (this.conceptIds.length > 0) {
-      Log.info(`Fetching photos from concepts: ${this.conceptIds.join(', ')}`);
+      Log.info(`Fetching photos from concepts: ${this.conceptIds.join(', ')} (offset: ${actualOffset})`);
       for (const conceptId of this.conceptIds) {
-        fetchPromises.push(this.fetchConceptPhotos(conceptId));
+        fetchPromises.push(this.fetchConceptPhotos(conceptId, actualOffset));
       }
     }
 
     // Fetch geocoding photos
     if (this.geocodingIds.length > 0) {
-      Log.info(`Fetching photos from geocoding: ${this.geocodingIds.join(', ')}`);
+      Log.info(`Fetching photos from geocoding: ${this.geocodingIds.join(', ')} (offset: ${actualOffset})`);
       for (const geocodingId of this.geocodingIds) {
-        fetchPromises.push(this.fetchGeocodingPhotos(geocodingId));
+        fetchPromises.push(this.fetchGeocodingPhotos(geocodingId, actualOffset));
       }
     }
 
@@ -484,7 +570,21 @@ class SynologyPhotosClient {
 
     try {
       const photoArrays = await Promise.all(fetchPromises);
-      const photos = photoArrays.flat();
+      let photos = photoArrays.flat();
+
+      // Sort by creation date (newest first) to ensure new images are prioritized
+      photos.sort((a, b) => {
+        const dateA = a.created || 0;
+        const dateB = b.created || 0;
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      // SYNOLOGY_MAX_PHOTOS is now a batch size - limit to that many photos
+      const batchSize = this.maxPhotosToFetch > 0 ? this.maxPhotosToFetch : 100;
+      if (photos.length > batchSize) {
+        Log.debug(`Limiting ${photos.length} photos to batch size ${batchSize}`);
+        photos = photos.slice(0, batchSize);
+      }
 
       const totalAlbums =
         this.personIds.length +
@@ -493,6 +593,31 @@ class SynologyPhotosClient {
       Log.info(
         `Fetched ${photos.length} photos from ${totalAlbums} personal space album(s)`
       );
+
+      // Debug: Create summary of unit_id to person_id mapping
+      if (this.personIds.length > 0) {
+        const personPhotoMap = new Map<number, number[]>();
+        for (const photo of photos) {
+          const personId = (photo as PhotoItem & { personId?: number }).personId;
+          if (personId !== undefined) {
+            const unitId = photo.synologyId;
+            if (unitId !== undefined) {
+              if (!personPhotoMap.has(personId)) {
+                personPhotoMap.set(personId, []);
+              }
+              personPhotoMap.get(personId)!.push(unitId);
+            }
+          }
+        }
+        
+        if (personPhotoMap.size > 0) {
+          Log.debug('=== SYNOLOGY_PERSON_IDS to unit_id mapping ===');
+          for (const [personId, unitIds] of personPhotoMap.entries()) {
+            Log.debug(`Person ID ${personId}: ${unitIds.length} photos with unit_ids [${unitIds.join(', ')}]`);
+          }
+          Log.debug('=== End of mapping ===');
+        }
+      }
 
       return this.removeDuplicatePhotos(photos);
     } catch (error) {
@@ -556,8 +681,10 @@ class SynologyPhotosClient {
 
   /**
    * Fetch photos from Synology Photos
+   * @param offset - Offset for pagination (default: 0)
+   * @param checkForNewFirst - If true, fetch newest photos first (offset 0), then continue with offset
    */
-  async fetchPhotos(): Promise<PhotoItem[]> {
+  async fetchPhotos(offset: number = 0, checkForNewFirst: boolean = false): Promise<PhotoItem[]> {
     try {
       let photos: PhotoItem[] = [];
 
@@ -568,7 +695,7 @@ class SynologyPhotosClient {
         (this.geocodingIds && this.geocodingIds.length > 0);
 
       if (hasPersonalSpaceAlbums) {
-        photos = await this.fetchPhotosByPersonalSpaceAlbums();
+        photos = await this.fetchPhotosByPersonalSpaceAlbums(offset, checkForNewFirst);
       } else if (this.tagIds && Object.keys(this.tagIds).length > 0) {
         photos = await this.fetchPhotosByTags();
       } else if (this.useSharedAlbum) {
@@ -599,7 +726,7 @@ class SynologyPhotosClient {
           limit: this.maxPhotosToFetch,
           passphrase: this.shareToken,
           additional:
-            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id"]'
+            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id","file_path"]'
         },
         timeout: 30000
       });
@@ -633,7 +760,7 @@ class SynologyPhotosClient {
           limit: this.maxPhotosToFetch,
           _sid: this.sid,
           additional:
-            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id"]'
+            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id","file_path"]'
         },
         timeout: 30000
       });
@@ -664,7 +791,7 @@ class SynologyPhotosClient {
           album_id: albumId,
           _sid: this.sid,
           additional:
-            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id"]'
+            '["thumbnail","resolution","orientation","video_convert","video_meta","provider_user_id","file_path"]'
         },
         timeout: 30000
       });
@@ -761,7 +888,8 @@ class SynologyPhotosClient {
    */
   private processPhotoList(
     photos: SynologyPhoto[],
-    spaceId: number | null = null
+    spaceId: number | null = null,
+    personId?: number
   ): PhotoItem[] {
     const imageList: PhotoItem[] = [];
 
@@ -785,11 +913,15 @@ class SynologyPhotosClient {
         id: uniqueId,
         synologyId: photo.id,
         spaceId,
+        personId, // Store person_id for alternative download method
+        // Note: file_path is not available from Photos API
+        // File Station API download would require searching for the file path first
         isSynology: true
       } as PhotoItem & {
         id: number | string;
         synologyId: number;
         spaceId: number | null;
+        personId?: number;
         isSynology: boolean;
       });
     }
@@ -798,7 +930,7 @@ class SynologyPhotosClient {
   }
 
   /**
-   * Generate photo URL for downloading
+   * Generate photo URL for downloading (thumbnail)
    */
   private getPhotoUrl(
     photoId: number,
@@ -824,7 +956,37 @@ class SynologyPhotosClient {
   }
 
   /**
-   * Download photo from Synology
+   * Generate URL for downloading original photo file (with EXIF metadata)
+   * Uses SYNO.Foto.Download API (version 2) for original files
+   * Note: This method is kept for compatibility, but downloadOriginalPhoto() now handles parameter selection
+   */
+  getOriginalPhotoUrl(
+    photoId: number,
+    spaceId: number | null = null
+  ): string {
+    let url: string;
+
+    if (this.useSharedAlbum) {
+      // Shared album: use passphrase
+      url = `${this.baseUrl}${this.photosApiPath}?api=SYNO.Foto.Download&version=2&method=download&id=${photoId}&passphrase=${this.shareToken}`;
+    } else {
+      // Personal or team space: use session ID
+      // Format unit_id with brackets: [photoId]
+      const api =
+        spaceId === 1 ? 'SYNO.FotoTeam.Download' : 'SYNO.Foto.Download';
+      url = `${this.baseUrl}${this.photosApiPath}?api=${api}&version=2&method=download&unit_id=[${photoId}]&_sid=${this.sid}`;
+
+      // space_id is required for personal space (spaceId = 0)
+      if (spaceId === 0 || spaceId === null) {
+        url += `&space_id=0`;
+      }
+    }
+
+    return url;
+  }
+
+  /**
+   * Download photo from Synology (thumbnail or original)
    */
   async downloadPhoto(photoUrl: string): Promise<Buffer | null> {
     try {
@@ -841,27 +1003,210 @@ class SynologyPhotosClient {
   }
 
   /**
-   * Logout and end session
+   * Download original photo file from Synology (with EXIF metadata)
+   * Uses SYNO.Foto.Download API with unit_id and SynoToken (or _sid)
+   */
+  async downloadOriginalPhoto(
+    photoId: number,
+    spaceId: number | null = null,
+    filePath?: string,
+    personId?: number
+  ): Promise<Buffer | null> {
+    try {
+      let url: string;
+
+      if (this.useSharedAlbum) {
+        // Shared album: use SynoToken (passphrase)
+        url = `${this.baseUrl}${this.photosApiPath}?api=SYNO.Foto.Download&version=1&method=download&unit_id=[${photoId}]&SynoToken=${this.shareToken}`;
+      } else {
+        // Personal or team space: use session ID
+        const api =
+          spaceId === 1 ? 'SYNO.FotoTeam.Download' : 'SYNO.Foto.Download';
+        const sessionId = this.photoSid || this.sid;
+        if (!sessionId) {
+          Log.warn('No session ID available for downloading original photo');
+          return null;
+        }
+        url = `${this.baseUrl}${this.photosApiPath}?api=${api}&version=1&method=download&unit_id=[${photoId}]&_sid=${sessionId}`;
+        
+        // space_id is required for personal space (spaceId = 0)
+        if (spaceId === 0 || spaceId === null) {
+          url += `&space_id=0`;
+        }
+      }
+
+      Log.debug(`Downloading original photo via SYNO.Foto.Download: ${url.replace(/SynoToken=[^&]+/, 'SynoToken=***').replace(/_sid=[^&]+/, '_sid=***')}`);
+      
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        validateStatus: (status) => status < 500
+      });
+
+      const buffer = Buffer.from(response.data, 'binary');
+
+      // Check if response is actually a JSON error message
+      if (buffer.length < 100) {
+        try {
+          const text = buffer.toString('utf-8');
+          if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+            const errorData = JSON.parse(text);
+            Log.error(
+              `Synology Download API returned error for photo ${photoId}: ${JSON.stringify(errorData)}`
+            );
+            return null;
+          }
+        } catch {
+          // Not JSON, continue
+        }
+      }
+
+      // Check Content-Type header if available
+      const contentType = response.headers['content-type'] || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const errorData = JSON.parse(buffer.toString('utf-8'));
+          Log.error(
+            `Synology Download API returned JSON error for photo ${photoId}: ${JSON.stringify(errorData)}`
+          );
+          return null;
+        } catch {
+          // Not valid JSON, continue
+        }
+      }
+
+      // Validate that we got actual image data
+      if (buffer.length < 100) {
+        Log.warn(
+          `Downloaded file for photo ${photoId} is suspiciously small (${buffer.length} bytes), might be an error`
+        );
+        return null;
+      }
+
+      Log.debug(
+        `Successfully downloaded original photo ${photoId}: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`
+      );
+      return buffer;
+    } catch (error) {
+      Log.error(
+        `Error downloading original photo ${photoId}: ${(error as Error).message}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get EXIF metadata directly from Synology API
+   * Uses SYNO.Foto.Browse.Item with method=get_exif
+   */
+  async getExifMetadata(
+    photoId: number,
+    spaceId: number | null = null
+  ): Promise<Record<string, unknown> | null> {
+    try {
+      const api =
+        spaceId === 1 ? 'SYNO.FotoTeam.Browse.Item' : 'SYNO.Foto.Browse.Item';
+      
+      const params: Record<string, unknown> = {
+        api,
+        version: '1',
+        method: 'get_exif',
+        id: `[${photoId}]` // Use brackets as shown in the example
+      };
+
+      if (this.useSharedAlbum) {
+        params.passphrase = this.shareToken;
+      } else {
+        // Use FileStation session (or PhotoStation if available)
+        const sessionId = this.photoSid || this.sid;
+        if (!sessionId) {
+          Log.warn('No session ID available for EXIF metadata request');
+          return null;
+        }
+        params._sid = sessionId;
+        if (spaceId === 0 || spaceId === null) {
+          params.space_id = 0;
+        }
+      }
+
+      Log.debug(`Fetching EXIF metadata for photo ${photoId} via API: ${api}`);
+      
+      const response = await axios.get(`${this.baseUrl}${this.photosApiPath}`, {
+        params,
+        timeout: 10000
+      });
+
+      if (response.data.success && response.data.data) {
+        Log.debug(`Successfully retrieved EXIF metadata for photo ${photoId}`);
+        return response.data.data;
+      }
+
+      Log.debug(
+        `EXIF metadata API call failed for photo ${photoId}: ${JSON.stringify(response.data)}`
+      );
+      return null;
+    } catch (error) {
+      Log.debug(
+        `Error fetching EXIF metadata for photo ${photoId}: ${(error as Error).message}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Logout and end sessions
+   */
+
+  /**
+   * Logout and end sessions
    */
   async logout(): Promise<void> {
-    if (this.useSharedAlbum || !this.sid) {
+    if (this.useSharedAlbum) {
       return;
     }
 
-    try {
-      await axios.get(`${this.baseUrl}${this.authApiPath}`, {
-        params: {
-          api: 'SYNO.API.Auth',
-          version: '3',
-          method: 'logout',
-          session: 'FileStation',
-          _sid: this.sid
-        },
-        timeout: 5000
-      });
+    // Logout from FileStation session
+    if (this.sid) {
+      try {
+        await axios.get(`${this.baseUrl}${this.authApiPath}`, {
+          params: {
+            api: 'SYNO.API.Auth',
+            version: '3',
+            method: 'logout',
+            session: 'FileStation',
+            _sid: this.sid
+          },
+          timeout: 5000
+        });
+        Log.debug('Logged out from FileStation session');
+      } catch (error) {
+        Log.debug(`Error logging out from FileStation: ${(error as Error).message}`);
+      }
+      this.sid = null;
+    }
+
+    // Logout from PhotoStation session
+    if (this.photoSid) {
+      try {
+        await axios.get(`${this.baseUrl}${this.authApiPath}`, {
+          params: {
+            api: 'SYNO.API.Auth',
+            version: '3',
+            method: 'logout',
+            session: 'PhotoStation',
+            _sid: this.photoSid
+          },
+          timeout: 5000
+        });
+        Log.debug('Logged out from PhotoStation session');
+      } catch (error) {
+        Log.debug(`Error logging out from PhotoStation: ${(error as Error).message}`);
+      }
+      this.photoSid = null;
+    }
+
+    if (this.sid || this.photoSid) {
       Log.info('Logged out from Synology');
-    } catch (error) {
-      Log.error(`Error logging out: ${(error as Error).message}`);
     }
   }
 }

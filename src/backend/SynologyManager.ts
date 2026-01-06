@@ -16,7 +16,7 @@ class SynologyManager {
   /**
    * Fetch photos from Synology Photos
    */
-  async fetchPhotos(config: ModuleConfig): Promise<PhotoItem[]> {
+  async fetchPhotos(config: ModuleConfig, offset: number = 0, checkForNewFirst: boolean = false): Promise<PhotoItem[]> {
     try {
       Log.info('Initializing Synology Photos client...');
 
@@ -64,7 +64,7 @@ class SynologyManager {
         }
       }
 
-      const photos = await this.client.fetchPhotos();
+      const photos = await this.client.fetchPhotos(offset, checkForNewFirst);
 
       if (photos && photos.length > 0) {
         Log.info(`Retrieved ${photos.length} photos from Synology`);

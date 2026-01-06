@@ -156,9 +156,8 @@ export default class ModuleController {
       );
     }
 
-    if (this.config.showImageInfo) {
-      this.imageInfoDiv = this.createImageInfoDiv(wrapper);
-    }
+    // Image info div will be created dynamically for each image
+    // No need to create it here anymore
 
     if (this.config.showProgressBar) {
       this.createProgressbarDiv(wrapper, this.config.slideshowSpeed);
@@ -478,13 +477,47 @@ export default class ModuleController {
       this.imageHandler?.applyAnimation(imageDiv, image);
     }
 
-    // Handle EXIF data asynchronously
+    // Handle EXIF orientation and update image info from metadata
     setTimeout(() => {
-      this.handleEXIFData(image, imageinfo);
+      this.updateImageInfoFromMetadata(imageinfo);
       this.imageHandler?.applyExifOrientation(imageDiv, image);
     }, 0);
 
     transitionDiv.appendChild(imageDiv);
+    
+    // Add image info div to the current transition div if enabled
+    if (this.config.showImageInfo && this.uiBuilder) {
+      // Remove old info div if it exists
+      const oldInfoDiv = transitionDiv.querySelector('.info');
+      if (oldInfoDiv) {
+        oldInfoDiv.remove();
+      }
+      
+      // Remove old maps if they exist
+      const oldMap = transitionDiv.querySelector('.map-container');
+      if (oldMap) {
+        oldMap.remove();
+      }
+      const oldWorldMap = transitionDiv.querySelector('.world-map-container');
+      if (oldWorldMap) {
+        oldWorldMap.remove();
+      }
+      
+      // Create maps if location string is available from photo_metadata.json
+      if (imageinfo.metadata?.location) {
+        // Create detailed map (right side, with zoom)
+        this.uiBuilder.createMapDiv(transitionDiv, imageinfo.metadata.location);
+        // Create world map (left side, no zoom)
+        this.uiBuilder.createWorldMapDiv(transitionDiv, imageinfo.metadata.location);
+      }
+      
+      // Create new info div for this image
+      this.imageInfoDiv = this.uiBuilder.createImageInfoDiv(transitionDiv);
+      
+      // Update image info immediately with available metadata (before EXIF is loaded)
+      this.updateImageInfo(imageinfo, '');
+    }
+    
     this.imagesDiv?.appendChild(transitionDiv);
     this.Log.log('[MMM-SynPhotoSlideshow] Image appended to DOM');
     this.Log.log(
@@ -513,30 +546,15 @@ export default class ModuleController {
   }
 
   /**
-   * Handle EXIF data extraction and image info update
+   * Update image info from metadata (photo_metadata.json only, no EXIF)
    */
-  private handleEXIFData(image: HTMLImageElement, imageinfo: ImageInfo): void {
-    this.EXIF.getData(image, () => {
-      // Update image info if enabled
-      if (this.config.showImageInfo && this.imageInfoDiv) {
-        let dateTime = this.EXIF.getTag(image, 'DateTimeOriginal');
-        if (dateTime !== null) {
-          try {
-            const dateMoment = this.moment(
-              String(dateTime),
-              'YYYY:MM:DD HH:mm:ss'
-            );
-            dateTime = dateMoment.format('dddd MMMM D, YYYY HH:mm');
-          } catch {
-            this.Log.log(
-              `[MMM-SynPhotoSlideshow] Failed to parse dateTime: ${dateTime} to format YYYY:MM:DD HH:mm:ss`
-            );
-            dateTime = '';
-          }
-        }
-        this.updateImageInfo(imageinfo, String(dateTime || ''));
-      }
-    });
+  private updateImageInfoFromMetadata(imageinfo: ImageInfo): void {
+    // Update image info if enabled
+    if (this.config.showImageInfo && this.imageInfoDiv) {
+      // Only use metadata from photo_metadata.json, no EXIF fallback
+      // The date will be formatted in UIBuilder with UTC to CET conversion
+      this.updateImageInfo(imageinfo, '');
+    }
   }
 
   /**

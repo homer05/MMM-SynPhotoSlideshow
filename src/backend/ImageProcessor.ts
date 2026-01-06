@@ -9,9 +9,11 @@ import fsPromises from 'node:fs/promises';
 import Log from './Logger';
 import type { ModuleConfig } from '../types';
 import type ImageCache from './ImageCache';
+import ExifExtractor, { type ExifMetadata } from './ExifExtractor';
 
 interface SynologyClient {
   downloadPhoto: (url: string) => Promise<Buffer | null>;
+  downloadOriginalPhoto?: (photoId: number, spaceId: number | null, filePath?: string, personId?: number) => Promise<Buffer | null>;
 }
 
 class ImageProcessor {
@@ -19,12 +21,39 @@ class ImageProcessor {
 
   private readonly imageCache: ImageCache | null;
 
+  private readonly exifExtractor: ExifExtractor;
+
   constructor(
     config: Partial<ModuleConfig>,
     imageCache: ImageCache | null = null
   ) {
     this.config = config;
     this.imageCache = imageCache;
+    this.exifExtractor = new ExifExtractor();
+    // Initialize metadata file path (outside cache directory)
+    if (config.imageCachePath) {
+      this.exifExtractor.initializeMetadataFile(config.imageCachePath);
+    }
+  }
+
+  /**
+   * Extract metadata asynchronously (non-blocking)
+   */
+  private async extractMetadataAsync(imagePath: string): Promise<void> {
+    try {
+      const metadata = await this.exifExtractor.extractAndSaveMetadata(imagePath);
+      if (metadata) {
+        if (metadata.captureDate) {
+          Log.debug(`Extracted capture date from thumbnail: ${metadata.captureDate}`);
+        }
+        if (metadata.latitude !== undefined) {
+          Log.debug(`Extracted location from thumbnail: ${metadata.location}`);
+        }
+      }
+    } catch (error) {
+      // Silently fail - metadata extraction is optional
+      Log.debug(`Metadata extraction failed: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -32,7 +61,7 @@ class ImageProcessor {
    */
   private async resizeImage(
     inputPath: string,
-    callback: (data: string | null) => void
+    callback: (data: string | null, metadata?: ExifMetadata) => void
   ): Promise<void> {
     Log.log(
       `Resizing image to max: ${this.config.maxWidth}x${this.config.maxHeight}`
@@ -53,7 +82,17 @@ class ImageProcessor {
         })
         .toBuffer();
 
-      callback(`data:image/jpg;base64,${buffer.toString('base64')}`);
+      const dataUrl = `data:image/jpg;base64,${buffer.toString('base64')}`;
+      
+      // Try to extract metadata from original file
+      let metadata: ExifMetadata | undefined;
+      try {
+        metadata = (await this.exifExtractor.extractAndSaveMetadata(inputPath)) || undefined;
+      } catch (error) {
+        Log.debug(`Failed to extract metadata from ${inputPath}: ${(error as Error).message}`);
+      }
+      
+      callback(dataUrl, metadata);
       Log.log('Resizing complete');
     } catch (err) {
       Log.error('Error resizing image:', err);
@@ -66,13 +105,23 @@ class ImageProcessor {
    */
   private async readFileRaw(
     filepath: string,
-    callback: (data: string | null) => void
+    callback: (data: string | null, metadata?: ExifMetadata) => void
   ): Promise<void> {
     const ext = filepath.split('.').pop();
 
     try {
       const buffer = await fsPromises.readFile(filepath);
-      callback(`data:image/${ext};base64,${buffer.toString('base64')}`);
+      const dataUrl = `data:image/${ext};base64,${buffer.toString('base64')}`;
+      
+      // Try to extract metadata from file
+      let metadata: ExifMetadata | undefined;
+      try {
+        metadata = (await this.exifExtractor.extractAndSaveMetadata(filepath)) || undefined;
+      } catch (error) {
+        Log.debug(`Failed to extract metadata from ${filepath}: ${(error as Error).message}`);
+      }
+      
+      callback(dataUrl, metadata);
       Log.log('File read complete');
     } catch (err) {
       Log.error('Error reading file:', err);
@@ -82,20 +131,113 @@ class ImageProcessor {
 
   /**
    * Download and process Synology image
+   * Stores original file in cache, returns data URL for frontend
    */
   private async downloadSynologyImage(
     imageUrl: string,
     synologyClient: SynologyClient,
-    callback: (data: string | null) => void
+    callback: (data: string | null, metadata?: ExifMetadata) => void,
+    synologyId?: number,
+    spaceId?: number | null
   ): Promise<void> {
     try {
       if (this.imageCache && this.config.enableImageCache) {
-        const cached = await this.imageCache.get(imageUrl);
+        // Use consistent cache key based on synologyId and spaceId
+        const cachedPath = await this.imageCache.get(imageUrl, synologyId, spaceId);
 
-        if (cached) {
+        if (cachedPath) {
           Log.debug('Serving image from cache');
-          callback(cached);
-          return;
+          // Read cached file and convert to data URL for frontend
+          try {
+            const buffer = await fsPromises.readFile(cachedPath);
+            const ext = cachedPath.split('.').pop()?.toLowerCase() || 'jpeg';
+            const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext;
+            const base64 = buffer.toString('base64');
+            
+            // Try to load metadata from centralized database first (no original file needed)
+            let metadata: ExifMetadata | undefined;
+            if (synologyId !== undefined) {
+              try {
+                // Check if metadata exists in centralized database
+                metadata = (await this.exifExtractor.loadMetadataFromDatabase(synologyId, spaceId ?? null)) || undefined;
+                if (metadata) {
+                  Log.debug(`Loaded metadata from centralized database for photo ${synologyId}`);
+                  
+                  // Check if address data is missing and trigger geocoding if needed (with rate limiting)
+                  if (metadata.location && !metadata.FullAddress) {
+                    Log.debug(`Photo ${synologyId} has location but no address, triggering geocoding (will respect 5-second rate limit)`);
+                    void this.exifExtractor.checkAndLogGeocodingUrl(synologyId, spaceId ?? null, metadata.location);
+                  }
+                } else {
+                  // No metadata in database, need to download original file to extract metadata
+                  Log.debug(`No metadata in database for photo ${synologyId}, need to download original file`);
+                  
+                  if (this.imageCache && synologyClient.downloadOriginalPhoto) {
+                    try {
+                      const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
+                      Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
+                      let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
+                      
+                      // If original not in cache, try to download it
+                      if (!originalCachedPath) {
+                        Log.debug(`Original file not in cache, attempting to download...`);
+                        try {
+                          const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
+                          if (originalBuffer) {
+                            // Determine file extension from buffer or default
+                            let fileExtension = '.heic'; // Default for Synology Photos
+                            originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, fileExtension, synologyId, spaceId);
+                            if (originalCachedPath) {
+                              Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
+                            }
+                          }
+                        } catch (error) {
+                          Log.debug(`Failed to download original file: ${(error as Error).message}`);
+                        }
+                      }
+                      
+                      if (originalCachedPath) {
+                        Log.debug(`Extracting metadata from original file: ${originalCachedPath}`);
+                        // Extract metadata from original file
+                        metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
+                        if (metadata) {
+                          Log.debug(`Successfully extracted metadata from original file`);
+                          // Save to centralized metadata database
+                          await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
+                        } else {
+                          Log.debug(`Failed to extract metadata from original file`);
+                        }
+                      } else {
+                        Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                      }
+                    } catch (error) {
+                      Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+                    }
+                  }
+                }
+              } catch (error) {
+                Log.debug(`Failed to load metadata from database: ${(error as Error).message}`);
+              }
+            } else {
+              if (synologyId === undefined) {
+                Log.debug(`No synologyId available for metadata lookup`);
+              }
+              if (!this.imageCache) {
+                Log.debug(`Image cache not available for metadata lookup`);
+              }
+            }
+            
+            // Note: We NEVER use thumbnail metadata - only original file metadata
+            // If no metadata is available from original, we return undefined
+            
+            callback(`data:image/${mimeType};base64,${base64}`, metadata);
+            return;
+          } catch (error) {
+            Log.warn(
+              `Failed to read cached file ${cachedPath}: ${(error as Error).message}`
+            );
+            // Continue to download
+          }
         }
       }
 
@@ -103,15 +245,95 @@ class ImageProcessor {
       const imageBuffer = await synologyClient.downloadPhoto(imageUrl);
 
       if (imageBuffer) {
-        const base64 = imageBuffer.toString('base64');
-        const dataUrl = `data:image/jpeg;base64,${base64}`;
-        Log.debug(`Downloaded Synology image: ${imageBuffer.length} bytes`);
-
-        if (this.imageCache && this.config.enableImageCache) {
-          await this.imageCache.set(imageUrl, dataUrl);
+        // Determine file extension from URL or default to jpg
+        let fileExtension = '.jpg';
+        if (imageUrl.includes('.heic') || imageUrl.includes('.HEIC')) {
+          fileExtension = '.heic';
+        } else if (imageUrl.includes('.png')) {
+          fileExtension = '.png';
+        } else if (imageUrl.includes('.webp')) {
+          fileExtension = '.webp';
         }
 
-        callback(dataUrl);
+        // Store thumbnail in cache with consistent key
+        let metadata: ExifMetadata | undefined;
+        if (this.imageCache && this.config.enableImageCache) {
+          // Use consistent cache key based on synologyId and spaceId
+          const cachedPath = await this.imageCache.set(imageUrl, imageBuffer, fileExtension, synologyId, spaceId);
+          
+          // Try to load metadata from centralized database first (no original file needed)
+          if (synologyId !== undefined) {
+            try {
+              // Check if metadata exists in centralized database
+              metadata = (await this.exifExtractor.loadMetadataFromDatabase(synologyId, spaceId ?? null)) || undefined;
+              if (metadata) {
+                Log.debug(`Loaded metadata from centralized database for photo ${synologyId}`);
+                
+                // Check if address data is missing and trigger geocoding if needed (with rate limiting)
+                if (metadata.location && !metadata.FullAddress) {
+                  Log.debug(`Photo ${synologyId} has location but no address, triggering geocoding (will respect 5-second rate limit)`);
+                  void this.exifExtractor.checkAndLogGeocodingUrl(synologyId, spaceId ?? null, metadata.location);
+                }
+              } else {
+                // No metadata in database, need to download original file to extract metadata
+                Log.debug(`No metadata in database for photo ${synologyId}, need to download original file`);
+                
+                if (synologyClient.downloadOriginalPhoto) {
+                  try {
+                    const originalCacheKey = `original_${synologyId}_${spaceId || 0}`;
+                    Log.debug(`Looking for original file cache with key: ${originalCacheKey}`);
+                    let originalCachedPath = await this.imageCache.get(originalCacheKey, synologyId, spaceId);
+                    
+                    // If original not in cache, try to download it
+                    if (!originalCachedPath) {
+                      Log.debug(`Original file not in cache, attempting to download...`);
+                      try {
+                        const originalBuffer = await synologyClient.downloadOriginalPhoto(synologyId, spaceId ?? null);
+                        if (originalBuffer) {
+                          // Determine file extension from buffer or default
+                          let originalFileExtension = '.heic'; // Default for Synology Photos
+                          originalCachedPath = await this.imageCache.set(originalCacheKey, originalBuffer, originalFileExtension, synologyId, spaceId);
+                          if (originalCachedPath) {
+                            Log.debug(`Downloaded and cached original file: ${originalCachedPath}`);
+                          }
+                        }
+                      } catch (error) {
+                        Log.debug(`Failed to download original file: ${(error as Error).message}`);
+                      }
+                    }
+                    
+                    if (originalCachedPath) {
+                      Log.debug(`Extracting metadata from original file: ${originalCachedPath}`);
+                      // Extract metadata from original file
+                      metadata = (await this.exifExtractor.extractAndSaveMetadata(originalCachedPath)) || undefined;
+                      if (metadata) {
+                        Log.debug(`Successfully extracted metadata from original file`);
+                        // Save to centralized metadata database
+                        await this.exifExtractor.savePhotoMetadata(synologyId, spaceId ?? null, metadata);
+                      } else {
+                        Log.debug(`Failed to extract metadata from original file`);
+                      }
+                    } else {
+                      Log.debug(`Original file not available for metadata extraction (key: ${originalCacheKey})`);
+                    }
+                  } catch (error) {
+                    Log.debug(`Failed to load metadata from original file: ${(error as Error).message}`);
+                  }
+                }
+              }
+            } catch (error) {
+              Log.debug(`Failed to load metadata from database: ${(error as Error).message}`);
+            }
+          }
+        }
+
+        // Convert to data URL for frontend compatibility
+        const base64 = imageBuffer.toString('base64');
+        const mimeType = fileExtension === '.heic' ? 'heic' : 'jpeg';
+        const dataUrl = `data:image/${mimeType};base64,${base64}`;
+        Log.debug(`Downloaded Synology image: ${imageBuffer.length} bytes`);
+
+        callback(dataUrl, metadata);
       } else {
         Log.error('Failed to download Synology image');
         callback(null);
@@ -129,12 +351,14 @@ class ImageProcessor {
    */
   async readFile(
     filepath: string,
-    callback: (data: string | null) => void,
+    callback: (data: string | null, metadata?: ExifMetadata) => void,
     imageUrl: string | null = null,
-    synologyClient: SynologyClient | null = null
+    synologyClient: SynologyClient | null = null,
+    synologyId?: number,
+    spaceId?: number | null
   ): Promise<void> {
     if (imageUrl && synologyClient) {
-      await this.downloadSynologyImage(imageUrl, synologyClient, callback);
+      await this.downloadSynologyImage(imageUrl, synologyClient, callback, synologyId, spaceId);
       return;
     }
 

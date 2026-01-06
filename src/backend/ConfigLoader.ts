@@ -36,6 +36,12 @@ class ConfigLoader {
           if (loadedVars) {
             Log.info(`Loaded variables: ${loadedVars}`);
           }
+          // Check if SYNOLOGY_MAX_PHOTOS is in the parsed result
+          if (result.parsed && 'SYNOLOGY_MAX_PHOTOS' in result.parsed) {
+            Log.info(`SYNOLOGY_MAX_PHOTOS found in .env file: ${result.parsed.SYNOLOGY_MAX_PHOTOS}`);
+          } else {
+            Log.info('SYNOLOGY_MAX_PHOTOS not found in .env file');
+          }
         }
       } else {
         Log.info('.env file not found, using config.js values only');
@@ -147,7 +153,9 @@ class ConfigLoader {
     }
 
     // Numeric settings
+    Log.info(`Checking SYNOLOGY_MAX_PHOTOS: process.env.SYNOLOGY_MAX_PHOTOS = ${process.env.SYNOLOGY_MAX_PHOTOS || 'undefined'}, config.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`);
     this.setIntFromEnv(merged, 'SYNOLOGY_MAX_PHOTOS', 'synologyMaxPhotos');
+    Log.info(`After setIntFromEnv: merged.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`);
     this.setIntFromEnv(merged, 'SLIDESHOW_SPEED', 'slideshowSpeed');
     if (process.env.SLIDESHOW_SPEED) {
       Log.info(`SLIDESHOW_SPEED from env: ${process.env.SLIDESHOW_SPEED}, merged slideshowSpeed: ${merged.slideshowSpeed}`);
@@ -170,6 +178,17 @@ class ConfigLoader {
       merged,
       'IMAGE_CACHE_PRELOAD_DELAY',
       'imageCachePreloadDelay'
+    );
+    this.setStringFromEnv(merged, 'IMAGE_CACHE_PATH', 'imageCachePath');
+    this.setBoolFromEnv(
+      merged,
+      'BACKGROUND_DOWNLOAD_ENABLED',
+      'backgroundDownloadEnabled'
+    );
+    this.setIntFromEnv(
+      merged,
+      'BACKGROUND_DOWNLOAD_INTERVAL',
+      'backgroundDownloadInterval'
     );
 
     // Memory monitoring
