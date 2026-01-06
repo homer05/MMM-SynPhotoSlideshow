@@ -122,6 +122,9 @@
 		left: 10px;
 		text-align: left;
 
+		// DEPRECATED: imageInfoLocation option no longer works
+		// All position variants are overridden to use fixed top-left position
+		// These classes are kept for backward compatibility but have no effect
 		&.bottomRight {
 			// Override: always use top-left position
 			top: 10px;

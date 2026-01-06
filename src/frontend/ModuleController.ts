@@ -493,13 +493,15 @@ export default class ModuleController {
         oldInfoDiv.remove();
       }
       
-      // Remove old maps if they exist
-      const oldMap = transitionDiv.querySelector('.map-container');
+      // Remove old maps if they exist (destroy Leaflet instances first to prevent memory leaks)
+      const oldMap = transitionDiv.querySelector('.map-container') as HTMLElement;
       if (oldMap) {
+        this.uiBuilder?.destroyMap(oldMap);
         oldMap.remove();
       }
-      const oldWorldMap = transitionDiv.querySelector('.world-map-container');
+      const oldWorldMap = transitionDiv.querySelector('.world-map-container') as HTMLElement;
       if (oldWorldMap) {
+        this.uiBuilder?.destroyMap(oldWorldMap);
         oldWorldMap.remove();
       }
       

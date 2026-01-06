@@ -1165,6 +1165,10 @@ class SynologyPhotosClient {
       return;
     }
 
+    // Store session state before logout to check if any session was active
+    const hadFileStationSession = !!this.sid;
+    const hadPhotoStationSession = !!this.photoSid;
+
     // Logout from FileStation session
     if (this.sid) {
       try {
@@ -1205,7 +1209,8 @@ class SynologyPhotosClient {
       this.photoSid = null;
     }
 
-    if (this.sid || this.photoSid) {
+    // Log if any session was active (check stored state, not current state)
+    if (hadFileStationSession || hadPhotoStationSession) {
       Log.info('Logged out from Synology');
     }
   }

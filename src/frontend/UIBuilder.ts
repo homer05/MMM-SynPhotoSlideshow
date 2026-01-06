@@ -71,6 +71,7 @@ class UIBuilder {
    * Create map div for geolocation display
    * Uses location string from photo_metadata.json
    * Uses Leaflet with OpenStreetMap tiles
+   * Stores map instance in container for proper cleanup
    */
   createMapDiv(wrapper: HTMLElement, location: string): HTMLDivElement | null {
     // Parse location string from photo_metadata.json
@@ -127,6 +128,10 @@ class UIBuilder {
           })
         }).addTo(map);
 
+        // Store map instance in container for proper cleanup
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mapContainer as any)._leafletMap = map;
+
         // Trigger map resize to ensure proper rendering
         setTimeout(() => {
           map.invalidateSize();
@@ -141,6 +146,7 @@ class UIBuilder {
 
   /**
    * Create world map div (left side, no zoom - shows location on world map)
+   * Stores map instance in container for proper cleanup
    */
   createWorldMapDiv(wrapper: HTMLElement, location: string): HTMLDivElement | null {
     // Parse location string from photo_metadata.json
@@ -198,6 +204,10 @@ class UIBuilder {
           })
         }).addTo(map);
 
+        // Store map instance in container for proper cleanup
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (mapContainer as any)._leafletMap = map;
+
         // Trigger map resize to ensure proper rendering
         setTimeout(() => {
           map.invalidateSize();
@@ -208,6 +218,28 @@ class UIBuilder {
     }, 10);
     
     return mapContainer;
+  }
+
+  /**
+   * Destroy Leaflet map instance to prevent memory leaks
+   * Must be called before removing the map container from DOM
+   */
+  destroyMap(mapContainer: HTMLElement | null): void {
+    if (!mapContainer) {
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = (mapContainer as any)._leafletMap;
+    if (map && typeof map.remove === 'function') {
+      try {
+        map.remove();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (mapContainer as any)._leafletMap;
+      } catch (error) {
+        Log.warn(`[MMM-SynPhotoSlideshow] Error destroying map: ${(error as Error).message}`);
+      }
+    }
   }
 
   /**
