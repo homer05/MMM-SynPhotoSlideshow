@@ -12,7 +12,7 @@ The `MMM-SynPhotoSlideshow` module connects directly to your Synology DiskStatio
 
 Based on [MMM-ImageSlideshow](https://github.com/AdamMoses-GitHub/MMM-ImageSlideshow/) and [MMM-BackgroundSlideshow](https://github.com/darickc/MMM-BackgroundSlideshow/).
 
-<img src="https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow/blob/main/screenshots/MMM-SynPhotoSlideshow.png" style="width: 300px;" alt="landscape screenshot" />
+<img src="https://github.com/homer05/MMM-SynPhotoSlideshow/blob/main/screenshots/MMM-SynPhotoSlideshow.png" style="width: 300px;" alt="landscape screenshot" />
 
 ## Dependencies / Requirements
 
