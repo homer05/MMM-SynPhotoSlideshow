@@ -165,10 +165,13 @@ class ImageListManager {
    * @param config - Module configuration
    * @param isPreload - If true, store as next batch instead of replacing current list
    */
-  prepareImageList(images: PhotoItem[], config: ModuleConfig, isPreload: boolean = false): PhotoItem[] {
-    const targetList = isPreload ? [] : this.imageList;
+  prepareImageList(
+    images: PhotoItem[],
+    config: ModuleConfig,
+    isPreload: boolean = false
+  ): PhotoItem[] {
     const workingList = [...images];
-    
+
     // Load shown images tracker if needed
     if (config.showAllImagesBeforeRestart) {
       this.alreadyShownSet = this.readShownImagesTracker();
@@ -218,12 +221,44 @@ class ImageListManager {
       Log.info(`Preloaded next batch with ${finalImageList.length} images`);
       return finalImageList;
     }
-    
+
     this.imageList = finalImageList;
     this.index = 0;
 
     Log.info(`Final image list contains ${this.imageList.length} files`);
     return this.imageList;
+  }
+
+  /**
+   * Photos in the current batch that have not been displayed yet
+   */
+  getRemainingImages(): PhotoItem[] {
+    return this.imageList.slice(this.index);
+  }
+
+  /**
+   * Show a specific remaining photo next, then advance past it
+   * @returns The chosen photo, or null when it is not still remaining
+   */
+  consumeImage(path: string): PhotoItem | null {
+    const start = this.index;
+    const found = this.imageList.findIndex(
+      (image, position) => position >= start && image.path === path
+    );
+
+    if (found < 0) {
+      return null;
+    }
+
+    if (found !== start) {
+      const [chosen] = this.imageList.splice(found, 1);
+      if (!chosen) {
+        return null;
+      }
+      this.imageList.splice(start, 0, chosen);
+    }
+
+    return this.getNextImage();
   }
 
   /**
@@ -290,7 +325,9 @@ class ImageListManager {
    */
   switchToNextBatch(): void {
     if (this.nextBatchList.length > 0) {
-      Log.info(`Switching to preloaded batch with ${this.nextBatchList.length} images`);
+      Log.info(
+        `Switching to preloaded batch with ${this.nextBatchList.length} images`
+      );
       this.imageList = this.nextBatchList;
       this.nextBatchList = [];
       this.index = 0;

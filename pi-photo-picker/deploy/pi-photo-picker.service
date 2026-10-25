@@ -1,0 +1,15 @@
+[Unit]
+Description=MMM-SynPhotoSlideshow photo picker agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/MagicMirror/modules/MMM-SynPhotoSlideshow/pi-photo-picker
+ExecStart=/usr/bin/npx --no-install agent-sdk serve --dir /home/pi/MagicMirror/modules/MMM-SynPhotoSlideshow/pi-photo-picker --mode single --host 127.0.0.1 --port 3000 --no-playground --no-docs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

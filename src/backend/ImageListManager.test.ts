@@ -542,4 +542,49 @@ describe('ImageListManager', () => {
       expect(img?.path).toBe('image1.jpg');
     });
   });
+
+  describe('agent selection', () => {
+    const images: PhotoItem[] = [
+      { path: 'image1.jpg', created: 1, modified: 1 },
+      { path: 'image2.jpg', created: 2, modified: 2 },
+      { path: 'image3.jpg', created: 3, modified: 3 }
+    ];
+    const config = {
+      showAllImagesBeforeRestart: false,
+      randomizeImageOrder: false,
+      sortImagesBy: 'name',
+      sortImagesDescending: false
+    } as ModuleConfig;
+
+    it('should list every photo before one is shown', () => {
+      manager.prepareImageList(images, config);
+
+      expect(manager.getRemainingImages().map((image) => image.path)).toEqual([
+        'image1.jpg',
+        'image2.jpg',
+        'image3.jpg'
+      ]);
+    });
+
+    it('should show the photo the agent picked and leave the others', () => {
+      manager.prepareImageList(images, config);
+
+      const chosen = manager.consumeImage('image3.jpg');
+
+      expect(chosen?.path).toBe('image3.jpg');
+      expect(manager.index).toBe(1);
+      expect(manager.getRemainingImages().map((image) => image.path)).toEqual([
+        'image1.jpg',
+        'image2.jpg'
+      ]);
+    });
+
+    it('should ignore a path that is not still remaining', () => {
+      manager.prepareImageList(images, config);
+      manager.getNextImage();
+
+      expect(manager.consumeImage('image1.jpg')).toBeNull();
+      expect(manager.index).toBe(1);
+    });
+  });
 });

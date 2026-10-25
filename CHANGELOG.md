@@ -2,6 +2,10 @@
 
 All notable changes to MMM-SynPhotoSlideshow are documented in this file.
 
+## Unreleased
+
+- Optional Raspberry Pi agent (`pi-photo-picker`) picks the next photo at random. Enable with `useAgentPicker` / `USE_AGENT_PICKER`. The slideshow keeps its own order when the agent is unreachable.
+
 ## [2.0.0] - 2024 - TypeScript Refactoring Release
 
 ### Major Changes

@@ -38,6 +38,8 @@ describe('ConfigLoader', () => {
     delete process.env.MEMORY_MONITOR_INTERVAL;
     delete process.env.MEMORY_THRESHOLD;
     delete process.env.RANDOMIZE_IMAGE_ORDER;
+    delete process.env.USE_AGENT_PICKER;
+    delete process.env.AGENT_PICKER_URL;
     delete process.env.SHOW_ALL_IMAGES_BEFORE_RESTART;
     delete process.env.RESIZE_IMAGES;
     delete process.env.MAX_WIDTH;
@@ -134,7 +136,11 @@ describe('ConfigLoader', () => {
         config as Parameters<typeof ConfigLoader.mergeEnvWithConfig>[0]
       );
 
-      expect(result).toEqual(config);
+      expect(result).toEqual({
+        ...config,
+        useAgentPicker: false,
+        agentPickerUrl: 'http://127.0.0.1:3000/v1/tools/pick_random_photo'
+      });
     });
 
     it('should override config with environment variables', () => {
@@ -213,6 +219,19 @@ describe('ConfigLoader', () => {
       expect(result.randomizeImageOrder).toBe(true);
       expect(result.showAllImagesBeforeRestart).toBe(false);
       expect(result.resizeImages).toBe(true);
+    });
+
+    it('should load the Raspberry Pi agent picker settings', () => {
+      process.env.USE_AGENT_PICKER = 'true';
+      process.env.AGENT_PICKER_URL =
+        'http://127.0.0.1:3000/v1/tools/pick_random_photo';
+
+      const result = ConfigLoader.mergeEnvWithConfig({});
+
+      expect(result.useAgentPicker).toBe(true);
+      expect(result.agentPickerUrl).toBe(
+        'http://127.0.0.1:3000/v1/tools/pick_random_photo'
+      );
     });
 
     it('should handle all environment variables together', () => {

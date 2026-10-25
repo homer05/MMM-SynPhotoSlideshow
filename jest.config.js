@@ -30,5 +30,5 @@ module.exports = {
 		"^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
 	},
 	verbose: true,
-	testPathIgnorePatterns: ["/node_modules/", "/lib/", "/storybook-static/"]
+	testPathIgnorePatterns: ["/node_modules/", "/lib/", "/storybook-static/", "/pi-photo-picker/"]
 };

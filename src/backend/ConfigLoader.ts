@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Log from './Logger';
-import type { ModuleConfig } from '../types';
+import { DEFAULT_AGENT_PICKER_URL, type ModuleConfig } from '../types';
 
 class ConfigLoader {
   /**
@@ -38,7 +38,9 @@ class ConfigLoader {
           }
           // Check if SYNOLOGY_MAX_PHOTOS is in the parsed result
           if (result.parsed && 'SYNOLOGY_MAX_PHOTOS' in result.parsed) {
-            Log.info(`SYNOLOGY_MAX_PHOTOS found in .env file: ${result.parsed.SYNOLOGY_MAX_PHOTOS}`);
+            Log.info(
+              `SYNOLOGY_MAX_PHOTOS found in .env file: ${result.parsed.SYNOLOGY_MAX_PHOTOS}`
+            );
           } else {
             Log.info('SYNOLOGY_MAX_PHOTOS not found in .env file');
           }
@@ -131,34 +133,42 @@ class ConfigLoader {
     // Person IDs (comma-separated numbers)
     // KI-generated person albums from personal_space
     if (process.env.SYNOLOGY_PERSON_IDS) {
-      merged.synologyPersonIds = process.env.SYNOLOGY_PERSON_IDS.split(',').map(
-        (id) => Number.parseInt(id.trim(), 10)
-      ).filter((id) => !Number.isNaN(id));
+      merged.synologyPersonIds = process.env.SYNOLOGY_PERSON_IDS.split(',')
+        .map((id) => Number.parseInt(id.trim(), 10))
+        .filter((id) => !Number.isNaN(id));
     }
 
     // Concept IDs (comma-separated numbers)
     // KI-generated concept albums (themes) from personal_space
     if (process.env.SYNOLOGY_CONCEPT_IDS) {
-      merged.synologyConceptIds = process.env.SYNOLOGY_CONCEPT_IDS.split(',').map(
-        (id) => Number.parseInt(id.trim(), 10)
-      ).filter((id) => !Number.isNaN(id));
+      merged.synologyConceptIds = process.env.SYNOLOGY_CONCEPT_IDS.split(',')
+        .map((id) => Number.parseInt(id.trim(), 10))
+        .filter((id) => !Number.isNaN(id));
     }
 
     // Geocoding IDs (comma-separated numbers)
     // KI-generated geocoding albums (locations) from personal_space
     if (process.env.SYNOLOGY_GEOCODING_IDS) {
-      merged.synologyGeocodingIds = process.env.SYNOLOGY_GEOCODING_IDS.split(',').map(
-        (id) => Number.parseInt(id.trim(), 10)
-      ).filter((id) => !Number.isNaN(id));
+      merged.synologyGeocodingIds = process.env.SYNOLOGY_GEOCODING_IDS.split(
+        ','
+      )
+        .map((id) => Number.parseInt(id.trim(), 10))
+        .filter((id) => !Number.isNaN(id));
     }
 
     // Numeric settings
-    Log.info(`Checking SYNOLOGY_MAX_PHOTOS: process.env.SYNOLOGY_MAX_PHOTOS = ${process.env.SYNOLOGY_MAX_PHOTOS || 'undefined'}, config.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`);
+    Log.info(
+      `Checking SYNOLOGY_MAX_PHOTOS: process.env.SYNOLOGY_MAX_PHOTOS = ${process.env.SYNOLOGY_MAX_PHOTOS || 'undefined'}, config.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`
+    );
     this.setIntFromEnv(merged, 'SYNOLOGY_MAX_PHOTOS', 'synologyMaxPhotos');
-    Log.info(`After setIntFromEnv: merged.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`);
+    Log.info(
+      `After setIntFromEnv: merged.synologyMaxPhotos = ${merged.synologyMaxPhotos || 'undefined'}`
+    );
     this.setIntFromEnv(merged, 'SLIDESHOW_SPEED', 'slideshowSpeed');
     if (process.env.SLIDESHOW_SPEED) {
-      Log.info(`SLIDESHOW_SPEED from env: ${process.env.SLIDESHOW_SPEED}, merged slideshowSpeed: ${merged.slideshowSpeed}`);
+      Log.info(
+        `SLIDESHOW_SPEED from env: ${process.env.SLIDESHOW_SPEED}, merged slideshowSpeed: ${merged.slideshowSpeed}`
+      );
     }
     this.setIntFromEnv(
       merged,
@@ -202,6 +212,14 @@ class ConfigLoader {
 
     // Boolean settings
     this.setBoolFromEnv(merged, 'RANDOMIZE_IMAGE_ORDER', 'randomizeImageOrder');
+    this.setBoolFromEnv(merged, 'USE_AGENT_PICKER', 'useAgentPicker');
+    this.setStringFromEnv(merged, 'AGENT_PICKER_URL', 'agentPickerUrl');
+    if (!merged.agentPickerUrl) {
+      merged.agentPickerUrl = DEFAULT_AGENT_PICKER_URL;
+    }
+    if (merged.useAgentPicker === undefined) {
+      merged.useAgentPicker = false;
+    }
     this.setBoolFromEnv(
       merged,
       'SHOW_ALL_IMAGES_BEFORE_RESTART',
