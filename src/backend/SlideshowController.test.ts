@@ -15,6 +15,13 @@ jest.mock('./SynologyManager');
 jest.mock('./ImageProcessor');
 jest.mock('./ImageCache');
 jest.mock('./MemoryMonitor');
+jest.mock('./AgentPhotoPicker', () => {
+  const pick = jest.fn(async () => null as string | null);
+  return {
+    __esModule: true,
+    default: jest.fn().mockImplementation(() => ({ pick }))
+  };
+});
 
 // Now import modules
 import SlideshowController from './SlideshowController';
@@ -26,6 +33,7 @@ import SynologyManager from './SynologyManager';
 import ImageProcessor from './ImageProcessor';
 import ImageCache from './ImageCache';
 import MemoryMonitor from './MemoryMonitor';
+import AgentPhotoPicker from './AgentPhotoPicker';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Setup mocks
@@ -45,6 +53,14 @@ const mockImageListManager = {
   reset: jest.fn() as jest.MockedFunction<any>,
   resetShownImagesTracker: jest.fn() as jest.MockedFunction<any>,
   addImageToShown: jest.fn() as jest.MockedFunction<any>,
+  setCurrentBatchOffset: jest.fn() as jest.MockedFunction<any>,
+  areAllImagesShown: jest.fn(() => false) as jest.MockedFunction<any>,
+  hasNextBatchPreloaded: jest.fn(() => false) as jest.MockedFunction<any>,
+  switchToNextBatch: jest.fn() as jest.MockedFunction<any>,
+  readShownImagesTracker: jest.fn(() => new Set()) as jest.MockedFunction<any>,
+  getCurrentBatchOffset: jest.fn(() => 0) as jest.MockedFunction<any>,
+  getRemainingImages: jest.fn(() => []) as jest.MockedFunction<any>,
+  consumeImage: jest.fn() as jest.MockedFunction<any>,
   index: 0
 };
 
@@ -64,7 +80,8 @@ const mockSynologyManager = {
 const mockImageCache = {
   initialize: jest.fn(async () => undefined),
   preloadImages: jest.fn(),
-  evictOldFiles: jest.fn(async () => undefined)
+  evictOldFiles: jest.fn(async () => undefined),
+  getCurrentCacheSize: jest.fn(async () => 0)
 };
 
 const mockImageProcessor = {
@@ -89,6 +106,15 @@ mockConfigLoader.initialize = jest.fn(
 (ImageProcessor as jest.Mock).mockImplementation(() => mockImageProcessor);
 (ImageCache as jest.Mock).mockImplementation(() => mockImageCache);
 (MemoryMonitor as jest.Mock).mockImplementation(() => mockMemoryMonitor);
+
+const agentPick = (): jest.MockedFunction<
+  (photos: unknown[]) => Promise<string | null>
+> => {
+  const picker = new (AgentPhotoPicker as unknown as new () => {
+    pick: jest.MockedFunction<(photos: unknown[]) => Promise<string | null>>;
+  })();
+  return picker.pick;
+};
 
 describe('SlideshowController', () => {
   let controller: SlideshowController;
@@ -458,86 +484,95 @@ describe('SlideshowController', () => {
 
       expect(mockLog.error).toHaveBeenCalledWith('Failed to get next image');
     });
-  });
 
-  describe('refreshImageList', () => {
-    it('should refresh the image list and maintain position', async () => {
+    it('should display the photo chosen by the local agent', async () => {
       const config: ModuleConfig = {
         identifier: 'test-module',
         synologyUrl: 'https://synology.example.com',
-        refreshImageListInterval: 30000
+        slideshowSpeed: 5000,
+        useAgentPicker: true,
+        agentPickerUrl: 'http://127.0.0.1:9/v1/tools/pick_random_photo'
       } as ModuleConfig;
 
-      mockImageListManager.index = 5;
-      mockImageListManager.getList.mockReturnValue(
-        new Array(10).fill({ path: '/photo.jpg' })
-      );
-      mockSynologyManager.fetchPhotos.mockResolvedValue([]);
-      mockImageListManager.prepareImageList.mockReturnValue(
-        new Array(10).fill({ path: '/photo.jpg' })
-      );
+      const chosen = { path: '/photo2.jpg', url: 'http://example.com/2' };
+      const candidates = [
+        { path: '/photo1.jpg', url: 'http://example.com/1' },
+        chosen
+      ];
 
-      await controller.initialize(config);
-      await (controller as any).refreshImageList();
+      mockImageListManager.isEmpty.mockReturnValue(false);
+      mockImageListManager.areAllImagesShown.mockReturnValue(false);
+      mockImageListManager.getRemainingImages.mockReturnValue(candidates);
+      mockImageListManager.consumeImage.mockReturnValue(chosen);
+      mockImageListManager.getList.mockReturnValue(candidates);
+      mockImageListManager.index = 1;
+      mockImageProcessor.readFile.mockImplementation((...args: any[]) => {
+        const callback = args[1] as (data: string) => void;
+        callback('agent-data');
+      });
+      agentPick().mockResolvedValue('/photo2.jpg');
+      jest.useFakeTimers();
 
-      expect(mockImageListManager.index).toBe(5);
-      expect(mockLog.info).toHaveBeenCalledWith(
-        expect.stringContaining('Maintained position')
-      );
+      try {
+        await controller.initialize(config);
+        await (controller as any).getNextImage();
+
+        expect(agentPick()).toHaveBeenCalled();
+        expect(mockImageListManager.consumeImage).toHaveBeenCalledWith(
+          '/photo2.jpg'
+        );
+        expect(mockNotificationCallback).toHaveBeenCalledWith(
+          'BACKGROUNDSLIDESHOW_DISPLAY_IMAGE',
+          expect.objectContaining({
+            path: '/photo2.jpg',
+            data: 'agent-data'
+          })
+        );
+      } finally {
+        jest.clearAllTimers();
+        jest.useRealTimers();
+        agentPick().mockReset();
+      }
     });
 
-    it('should reset position when current index exceeds new list length', async () => {
-      const config: ModuleConfig = {
-        identifier: 'test-module',
-        synologyUrl: 'https://synology.example.com'
-      } as ModuleConfig;
-
-      mockImageListManager.index = 15;
-      mockImageListManager.getList.mockReturnValue(
-        new Array(5).fill({ path: '/photo.jpg' })
-      );
-      mockSynologyManager.fetchPhotos.mockResolvedValue([]);
-      mockImageListManager.prepareImageList.mockReturnValue(
-        new Array(5).fill({ path: '/photo.jpg' })
-      );
-
-      await controller.initialize(config);
-      await (controller as any).refreshImageList();
-
-      expect(mockImageListManager.reset).toHaveBeenCalled();
-      expect(mockLog.info).toHaveBeenCalledWith(
-        expect.stringContaining('Reset to beginning')
-      );
-    });
-
-    it('should restart refresh timer after refreshing', async () => {
+    it('should fall back to local order when the agent is unreachable', async () => {
       const config: ModuleConfig = {
         identifier: 'test-module',
         synologyUrl: 'https://synology.example.com',
-        refreshImageListInterval: 60000
+        useAgentPicker: true
       } as ModuleConfig;
 
-      mockSynologyManager.fetchPhotos.mockResolvedValue([]);
-      mockImageListManager.prepareImageList.mockReturnValue([]);
-      mockImageListManager.getList.mockReturnValue([]);
+      const localImage = { path: '/local.jpg', url: null };
+      mockImageListManager.isEmpty.mockReturnValue(false);
+      mockImageListManager.areAllImagesShown.mockReturnValue(false);
+      mockImageListManager.getRemainingImages.mockReturnValue([localImage]);
+      mockImageListManager.getNextImage.mockReturnValue(localImage);
+      mockImageListManager.getList.mockReturnValue([localImage]);
+      mockImageListManager.index = 1;
+      mockImageProcessor.readFile.mockImplementation((...args: any[]) => {
+        const callback = args[1] as (data: string) => void;
+        callback('local-data');
+      });
+      agentPick().mockResolvedValue(null);
+      jest.useFakeTimers();
 
-      await controller.initialize(config);
+      try {
+        await controller.initialize(config);
+        await (controller as any).getNextImage();
 
-      const initialCallCount =
-        mockTimerManager.startRefreshTimer.mock.calls.length;
-
-      await (controller as any).refreshImageList();
-
-      expect(
-        mockTimerManager.startRefreshTimer.mock.calls.length
-      ).toBeGreaterThan(initialCallCount);
-    });
-
-    it('should handle refresh when config is null', async () => {
-      await (controller as any).refreshImageList();
-
-      // Should return early without error
-      expect(mockSynologyManager.fetchPhotos).not.toHaveBeenCalled();
+        expect(mockImageListManager.getNextImage).toHaveBeenCalled();
+        expect(mockLog.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Agent picker unavailable')
+        );
+        expect(mockNotificationCallback).toHaveBeenCalledWith(
+          'BACKGROUNDSLIDESHOW_DISPLAY_IMAGE',
+          expect.objectContaining({ path: '/local.jpg' })
+        );
+      } finally {
+        jest.clearAllTimers();
+        jest.useRealTimers();
+        agentPick().mockReset();
+      }
     });
   });
 
@@ -560,7 +595,7 @@ describe('SlideshowController', () => {
       controller.play();
 
       expect(mockTimerManager.startSlideshowTimer).toHaveBeenCalled();
-      expect(mockTimerManager.startRefreshTimer).toHaveBeenCalled();
+      expect(mockTimerManager.startRefreshTimer).not.toHaveBeenCalled();
     });
 
     it('should use default intervals when config values not provided', async () => {

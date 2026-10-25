@@ -15,7 +15,13 @@ import ImageProcessor from './ImageProcessor';
 import ImageCache from './ImageCache';
 import MemoryMonitor from './MemoryMonitor';
 import BackgroundDownloader from './BackgroundDownloader';
-import type { ImageInfo, ModuleConfig } from '../types';
+import AgentPhotoPicker from './AgentPhotoPicker';
+import {
+  DEFAULT_AGENT_PICKER_URL,
+  type ImageInfo,
+  type ModuleConfig,
+  type PhotoItem
+} from '../types';
 
 export type NotificationCallback = (
   notification: string,
@@ -115,19 +121,27 @@ export default class SlideshowController {
       return;
     }
 
-    Log.info(`Gathering image list... (offset: ${offset}, checkForNewFirst: ${checkForNewFirst})`);
+    Log.info(
+      `Gathering image list... (offset: ${offset}, checkForNewFirst: ${checkForNewFirst})`
+    );
 
     // Check cache size and evict if needed
     if (this.imageCache && config.enableImageCache) {
       const currentSize = await this.imageCache.getCurrentCacheSize();
       const maxSize = config.imageCacheMaxSize || 50000; // Default 50GB in MB
       if (currentSize >= maxSize) {
-        Log.info(`Cache size (${currentSize}MB) reached max (${maxSize}MB), evicting old files...`);
+        Log.info(
+          `Cache size (${currentSize}MB) reached max (${maxSize}MB), evicting old files...`
+        );
         await this.imageCache.evictOldFiles();
       }
     }
 
-    const photos = await this.synologyManager.fetchPhotos(config, offset, checkForNewFirst);
+    const photos = await this.synologyManager.fetchPhotos(
+      config,
+      offset,
+      checkForNewFirst
+    );
     const finalImageList = this.imageListManager.prepareImageList(
       photos,
       config,
@@ -198,79 +212,12 @@ export default class SlideshowController {
     // Clear retry flag if we have images
     this.isRetryingImageLoad = false;
 
-    // Check if we need to preload next batch (when only 2 images remain)
-    const currentList = this.imageListManager.getList();
-    const remainingImages = currentList.length - this.imageListManager.index;
-    const batchSize = this.config?.synologyMaxPhotos || 100;
-    
-    if (remainingImages <= 2 && !this.isLoadingNextBatch && this.config) {
-      Log.info(`Only ${remainingImages} images remaining, preloading next batch in background...`);
-      void this.preloadNextBatch(); // Load asynchronously without blocking
+    const ready = await this.advanceBatchIfNeeded();
+    if (!ready) {
+      return;
     }
 
-    // Check if all images in current batch have been shown
-    if (this.imageListManager.areAllImagesShown()) {
-      Log.info('All images in current batch have been shown, switching to next batch...');
-      
-      if (!this.config) {
-        return;
-      }
-
-      // If next batch was already preloaded, switch to it
-      if (this.imageListManager.hasNextBatchPreloaded()) {
-        Log.info('Switching to preloaded next batch');
-        this.imageListManager.switchToNextBatch();
-      } else {
-        // Next batch not preloaded, load it now (fallback)
-        Log.info('Next batch not yet preloaded, loading now...');
-        
-        // Check if all photos from Synology have been shown
-        const allShownSet = this.imageListManager.readShownImagesTracker();
-        const batchSize = this.config.synologyMaxPhotos || 100;
-        const currentOffset = this.imageListManager.getCurrentBatchOffset();
-        
-        // Try to load next batch
-        // First, check for new photos (offset 0)
-        const newPhotos = await this.synologyManager.fetchPhotos(this.config, 0, true);
-        
-        if (newPhotos.length > 0) {
-          // Filter out already shown photos
-          const unseenNewPhotos = newPhotos.filter(photo => !allShownSet.has(photo.path));
-          
-          if (unseenNewPhotos.length > 0) {
-            Log.info(`Found ${unseenNewPhotos.length} new unseen photos, loading them first`);
-            await this.gatherImageList(this.config, false, 0, true);
-          } else {
-            // No new unseen photos, load next batch
-            const nextOffset = currentOffset + batchSize;
-            Log.info(`Loading next batch with offset ${nextOffset}`);
-            await this.gatherImageList(this.config, false, nextOffset, false);
-          }
-        } else {
-          // No new photos, try next batch
-          const nextOffset = currentOffset + batchSize;
-          const nextBatchPhotos = await this.synologyManager.fetchPhotos(this.config, nextOffset, false);
-          
-          if (nextBatchPhotos.length > 0) {
-            Log.info(`Loading next batch with offset ${nextOffset}`);
-            await this.gatherImageList(this.config, false, nextOffset, false);
-          } else {
-            // No more photos available - all photos from Synology have been shown
-            Log.info('All photos from Synology have been shown, resetting tracker and starting from beginning');
-            this.imageListManager.resetShownImagesTracker();
-            await this.gatherImageList(this.config, false, 0, true);
-          }
-        }
-        
-        // After loading new batch, get next image
-        if (this.imageListManager.isEmpty()) {
-          Log.warn('No images available after loading next batch');
-          return;
-        }
-      }
-    }
-
-    const image = this.imageListManager.getNextImage();
+    const image = await this.selectNextImage();
     if (!image) {
       Log.error('Failed to get next image');
       return;
@@ -295,17 +242,22 @@ export default class SlideshowController {
           data: data || '',
           index: this.imageListManager.index,
           total: this.imageListManager.getList().length,
-          metadata: metadata
+          metadata
         };
-        
+
         // Debug output for metadata
         if (metadata) {
           Log.debug(`Image metadata for "${image.path}":`);
           if (metadata.captureDate) {
             Log.debug(`  Capture Date: ${metadata.captureDate}`);
           }
-          if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
-            Log.debug(`  Location: ${metadata.location} (${metadata.latitude}, ${metadata.longitude})`);
+          if (
+            metadata.latitude !== undefined &&
+            metadata.longitude !== undefined
+          ) {
+            Log.debug(
+              `  Location: ${metadata.location} (${metadata.latitude}, ${metadata.longitude})`
+            );
           }
           if (metadata.camera) {
             Log.debug(`  Camera: ${metadata.camera}`);
@@ -313,7 +265,7 @@ export default class SlideshowController {
         } else {
           Log.debug(`No metadata available for "${image.path}"`);
         }
-        
+
         Log.debug(`Sending DISPLAY_IMAGE notification for "${image.path}"`);
         this.notificationCallback(
           'BACKGROUNDSLIDESHOW_DISPLAY_IMAGE',
@@ -327,7 +279,9 @@ export default class SlideshowController {
     );
 
     const slideshowSpeed = this.config?.slideshowSpeed || 10000;
-    Log.info(`Using slideshowSpeed: ${slideshowSpeed}ms (${slideshowSpeed / 1000}s)`);
+    Log.info(
+      `Using slideshowSpeed: ${slideshowSpeed}ms (${slideshowSpeed / 1000}s)`
+    );
     this.timerManager.startSlideshowTimer(() => {
       void this.getNextImage();
     }, slideshowSpeed);
@@ -335,6 +289,138 @@ export default class SlideshowController {
     if (this.config?.showAllImagesBeforeRestart) {
       this.imageListManager.addImageToShown(image.path);
     }
+  }
+
+  /**
+   * Preload or switch batches, then continue the slideshow.
+   * @returns false when no image can be shown
+   */
+  private async advanceBatchIfNeeded(): Promise<boolean> {
+    const currentList = this.imageListManager.getList();
+    const remainingImages = currentList.length - this.imageListManager.index;
+
+    if (remainingImages <= 2 && !this.isLoadingNextBatch && this.config) {
+      Log.info(
+        `Only ${remainingImages} images remaining, preloading next batch in background...`
+      );
+      void this.preloadNextBatch();
+    }
+
+    if (!this.imageListManager.areAllImagesShown()) {
+      return true;
+    }
+
+    Log.info(
+      'All images in current batch have been shown, switching to next batch...'
+    );
+
+    if (!this.config) {
+      return false;
+    }
+
+    if (this.imageListManager.hasNextBatchPreloaded()) {
+      Log.info('Switching to preloaded next batch');
+      this.imageListManager.switchToNextBatch();
+      return true;
+    }
+
+    Log.info('Next batch not yet preloaded, loading now...');
+    await this.loadFollowingBatch();
+    if (this.imageListManager.isEmpty()) {
+      Log.warn('No images available after loading next batch');
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Load the next Synology page after the current batch is exhausted
+   */
+  private async loadFollowingBatch(): Promise<void> {
+    if (!this.config) {
+      return;
+    }
+
+    const allShownSet = this.imageListManager.readShownImagesTracker();
+    const batchSize = this.config.synologyMaxPhotos || 100;
+    const currentOffset = this.imageListManager.getCurrentBatchOffset();
+    const newPhotos = await this.synologyManager.fetchPhotos(
+      this.config,
+      0,
+      true
+    );
+
+    if (newPhotos.length > 0) {
+      const unseenNewPhotos = newPhotos.filter(
+        (photo) => !allShownSet.has(photo.path)
+      );
+
+      if (unseenNewPhotos.length > 0) {
+        Log.info(
+          `Found ${unseenNewPhotos.length} new unseen photos, loading them first`
+        );
+        await this.gatherImageList(this.config, false, 0, true);
+        return;
+      }
+
+      const nextOffset = currentOffset + batchSize;
+      Log.info(`Loading next batch with offset ${nextOffset}`);
+      await this.gatherImageList(this.config, false, nextOffset, false);
+      return;
+    }
+
+    const nextOffset = currentOffset + batchSize;
+    const nextBatchPhotos = await this.synologyManager.fetchPhotos(
+      this.config,
+      nextOffset,
+      false
+    );
+
+    if (nextBatchPhotos.length > 0) {
+      Log.info(`Loading next batch with offset ${nextOffset}`);
+      await this.gatherImageList(this.config, false, nextOffset, false);
+      return;
+    }
+
+    Log.info(
+      'All photos from Synology have been shown, resetting tracker and starting from beginning'
+    );
+    this.imageListManager.resetShownImagesTracker();
+    await this.gatherImageList(this.config, false, 0, true);
+  }
+
+  /**
+   * Choose the next photo. The Pi agent picks at random when enabled.
+   * Any failure keeps the local list order.
+   */
+  private async selectNextImage(): Promise<PhotoItem | null> {
+    if (!this.config?.useAgentPicker) {
+      return this.imageListManager.getNextImage();
+    }
+
+    const candidates = this.imageListManager.getRemainingImages();
+    if (!candidates.length) {
+      return this.imageListManager.getNextImage();
+    }
+
+    const picker = new AgentPhotoPicker(
+      this.config.agentPickerUrl || DEFAULT_AGENT_PICKER_URL
+    );
+    const pickedPath = await picker.pick(candidates);
+    if (!pickedPath) {
+      Log.warn('Agent picker unavailable, using local order');
+      return this.imageListManager.getNextImage();
+    }
+
+    const chosen = this.imageListManager.consumeImage(pickedPath);
+    if (!chosen) {
+      Log.warn(`Agent picked unknown path "${pickedPath}", using local order`);
+      return this.imageListManager.getNextImage();
+    }
+
+    Log.info(`Agent picked "${chosen.path}"`);
+    return chosen;
   }
 
   /**
@@ -356,37 +442,55 @@ export default class SlideshowController {
     }
 
     this.isLoadingNextBatch = true;
-    
+
     try {
       // Check if all photos from Synology have been shown
       const allShownSet = this.imageListManager.readShownImagesTracker();
       const batchSize = this.config.synologyMaxPhotos || 100;
       const currentOffset = this.imageListManager.getCurrentBatchOffset();
-      
+
       // First, check for new photos (offset 0)
-      const newPhotos = await this.synologyManager.fetchPhotos(this.config, 0, true);
-      
+      const newPhotos = await this.synologyManager.fetchPhotos(
+        this.config,
+        0,
+        true
+      );
+
       if (newPhotos.length > 0) {
         // Filter out already shown photos
-        const unseenNewPhotos = newPhotos.filter(photo => !allShownSet.has(photo.path));
-        
+        const unseenNewPhotos = newPhotos.filter(
+          (photo) => !allShownSet.has(photo.path)
+        );
+
         if (unseenNewPhotos.length > 0) {
-          Log.info(`Preloading ${unseenNewPhotos.length} new unseen photos in background`);
+          Log.info(
+            `Preloading ${unseenNewPhotos.length} new unseen photos in background`
+          );
           this.imageListManager.prepareImageList(newPhotos, this.config, true); // Preload mode
           return;
         }
       }
-      
+
       // No new unseen photos, preload next batch
       const nextOffset = currentOffset + batchSize;
       Log.info(`Preloading next batch with offset ${nextOffset} in background`);
-      const nextBatchPhotos = await this.synologyManager.fetchPhotos(this.config, nextOffset, false);
-      
+      const nextBatchPhotos = await this.synologyManager.fetchPhotos(
+        this.config,
+        nextOffset,
+        false
+      );
+
       if (nextBatchPhotos.length > 0) {
-        this.imageListManager.prepareImageList(nextBatchPhotos, this.config, true); // Preload mode
+        this.imageListManager.prepareImageList(
+          nextBatchPhotos,
+          this.config,
+          true
+        ); // Preload mode
       } else {
         // No more photos available - all photos from Synology have been shown
-        Log.info('All photos from Synology have been shown, will reset tracker when current batch ends');
+        Log.info(
+          'All photos from Synology have been shown, will reset tracker when current batch ends'
+        );
         // Don't reset tracker here - wait until all current images are shown
       }
     } catch (error) {

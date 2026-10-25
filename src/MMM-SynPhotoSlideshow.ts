@@ -12,7 +12,7 @@
  */
 
 import './frontend/display.scss';
-import type { ModuleConfig } from './types';
+import { DEFAULT_AGENT_PICKER_URL, type ModuleConfig } from './types';
 import ModuleController from './frontend/ModuleController';
 
 // Declare global MagicMirror types
@@ -84,6 +84,8 @@ const moduleDefinition: Partial<ModuleInstance> = {
     memoryThreshold: 0.85,
     slideshowSpeed: 10 * 1000,
     randomizeImageOrder: false,
+    useAgentPicker: false,
+    agentPickerUrl: DEFAULT_AGENT_PICKER_URL,
     fitPortraitImages: true,
     showAllImagesBeforeRestart: false,
     sortImagesBy: 'created',

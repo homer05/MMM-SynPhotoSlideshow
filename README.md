@@ -2,8 +2,8 @@
 
 > **⚠️ This is a Fork / Dies ist ein Fork**  
 > This repository is a fork of the original [MMM-SynPhotoSlideshow](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow) with additional features and enhancements.  
-> Dieses Repository ist ein Fork des originalen [MMM-SynPhotoSlideshow](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow) mit zusätzlichen Features und Verbesserungen.  
-> 
+> Dieses Repository ist ein Fork des originalen [MMM-SynPhotoSlideshow](https://github.com/spydersoft-consulting/MMM-SynPhotoSlideshow) mit zusätzlichen Features und Verbesserungen.
+>
 > **📖 For a complete list of differences, see [docs/FORK_DIFFERENCES.md](docs/FORK_DIFFERENCES.md)**  
 > **📖 Für eine vollständige Liste der Unterschiede, siehe [docs/FORK_DIFFERENCES.md](docs/FORK_DIFFERENCES.md)**
 
@@ -38,6 +38,32 @@ This module connects to your Synology Photos library and fetches your photo coll
 - Photos from a publicly shared album (no login required)
 
 Photos are displayed one at a time with configurable timing, transitions, and display options. Once all images have been shown, the module loops back to the beginning.
+
+## Zufällige Auswahl durch einen KI-Agenten / Random picks from a Pi agent
+
+Auf dem Raspberry Pi kann ein lokaler Agent das nächste Foto wählen. Die
+Zufallsauswahl macht das Tool `pick_random_photo` (gleichverteilt, ohne
+Wiederholung bis die aktuelle Runde durch ist). MagicMirror fragt den
+Agenten über localhost. Fällt der Agent aus, bleibt die bisherige Reihenfolge.
+
+```javascript
+{
+  module: 'MMM-SynPhotoSlideshow',
+  position: 'fullscreen_below',
+  config: {
+    useAgentPicker: true,
+    agentPickerUrl: 'http://127.0.0.1:3000/v1/tools/pick_random_photo'
+  }
+}
+```
+
+Start und systemd-Dienst: [pi-photo-picker/README.md](pi-photo-picker/README.md).
+
+On a Raspberry Pi, a local agent can choose the next photo. The random
+choice is the `pick_random_photo` tool (uniform, no repeat until the
+current round is finished). MagicMirror calls it on localhost and keeps
+the existing order when the agent is down. Setup:
+[pi-photo-picker/README.md](pi-photo-picker/README.md).
 
 ## Using the module
 
@@ -356,6 +382,7 @@ Display capture date and addresses from `photo_metadata.json` with automatic UTC
 ```
 
 **Available `imageInfo` options:**
+
 - `capturedate` - Capture date from metadata (UTC → CET/CEST)
 - `fulladdress` - Full address from metadata
 - `shortaddress` - Short address format "City - Country"

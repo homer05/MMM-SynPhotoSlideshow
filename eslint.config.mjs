@@ -10,7 +10,7 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig([
   {
-    'ignores': ['coverage/**', '__mocks__/**', 'output/**', '*.js', '!*.config.js', '!*.config.mjs', 'node_modules/**']
+    'ignores': ['coverage/**', '__mocks__/**', 'output/**', '*.js', '!*.config.js', '!*.config.mjs', 'node_modules/**', 'pi-photo-picker/**']
   },
   {
     'files': ['**/*.css'],

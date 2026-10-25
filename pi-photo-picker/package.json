@@ -1,0 +1,19 @@
+{
+  "name": "pi-photo-picker",
+  "private": true,
+  "type": "module",
+  "description": "Raspberry Pi agent that randomly picks the next Synology slideshow photo.",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test bot/lib/picker.test.ts",
+    "dev": "agent-sdk dev"
+  },
+  "dependencies": {
+    "@grok/agent-sdk": "^0.2.29",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "6.0.3"
+  }
+}

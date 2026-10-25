@@ -2,6 +2,10 @@
  * Types for MMM-SynPhotoSlideshow
  */
 
+/** Loopback URL of the Pi photo-picker agent tool. */
+export const DEFAULT_AGENT_PICKER_URL =
+  'http://127.0.0.1:3000/v1/tools/pick_random_photo';
+
 export interface PhotoItem {
   path: string;
   url?: string;
@@ -38,6 +42,10 @@ export interface ModuleConfig {
   memoryThreshold: number;
   slideshowSpeed: number;
   randomizeImageOrder: boolean;
+  /** Ask the local Pi agent to choose the next photo at random. */
+  useAgentPicker: boolean;
+  /** HTTP endpoint of the agent's pick_random_photo tool. */
+  agentPickerUrl: string;
   fitPortraitImages: boolean;
   showAllImagesBeforeRestart: boolean;
   sortImagesBy: string;
